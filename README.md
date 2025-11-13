@@ -1,9 +1,3 @@
-Here is a professional `README.md` file for your backend project, based on everything we've built together.
-
-You can copy this content and save it as `README.md` in the root of your `esheet-backend` folder.
-
----
-
 # e-Sheet Backend API
 
 This is the official backend server for the e-Sheet (Electronic Datasheet) system. It is a Node.js/Express API designed to manage and digitize the entire workflow for laboratory testing, from order creation to final report generation.
