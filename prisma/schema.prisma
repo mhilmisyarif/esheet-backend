@@ -1,0 +1,132 @@
+// This is your Prisma schema file,
+// located at prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// --- AUTH (Q5) ---
+enum UserRole {
+  TECHNICIAN
+  ENGINEER
+  ADMIN
+}
+
+model User {
+  id            Int      @id @default(autoincrement())
+  name          String
+  email         String   @unique
+  password_hash String
+  role          UserRole @default(TECHNICIAN)
+
+  // Relations
+  ReportsAsTechnician Report[] @relation("TechnicianReports")
+  ReportsAsEngineer   Report[] @relation("EngineerReports")
+}
+
+// --- LABS & STANDARDS (Q2) ---
+model Lab {
+  id       Int      @id @default(autoincrement())
+  lab_code String   @unique // e.g., "01", "04"
+  name     String
+
+  // Relations
+  TestStandards TestStandard[]
+  Orders        Order[]
+}
+
+model TestStandard {
+  id            Int    @id @default(autoincrement())
+  name          String @unique // e.g., "Lampu LED Swa-Balast"
+  lab           Lab    @relation(fields: [labId], references: [id])
+  labId         Int
+
+  // The JSON template!
+  template_data Json
+
+  // Relations
+  Samples Sample[]
+}
+
+// --- WORKFLOW ---
+model Order {
+  id        Int      @id @default(autoincrement())
+  order_no  String   @unique
+  lab       Lab      @relation(fields: [labId], references: [id])
+  labId     Int
+  applicant String?
+  address   String?
+  createdAt DateTime @default(now())
+
+  // Relations
+  Samples Sample[]
+}
+
+model Sample {
+  id             Int      @id @default(autoincrement())
+  order          Order    @relation(fields: [orderId], references: [id])
+  orderId        Int
+  testStandard   TestStandard @relation(fields: [testStandardId], references: [id])
+  testStandardId Int
+
+  iwo_no String? // Optional IWO
+  name   String
+  brand  String
+  model  String
+
+  // Relations
+  Report Report? // A sample has one report
+}
+
+// --- THE E-SHEET (HYBRID MODEL) ---
+enum ReportStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+}
+
+enum TestingType {
+  FULL
+  VERIFICATION
+}
+
+model Report {
+  id        Int      @id @default(autoincrement())
+  sample    Sample   @relation(fields: [sampleId], references: [id])
+  sampleId  Int      @unique
+  
+  technician   User?       @relation("TechnicianReports", fields: [technicianId], references: [id])
+  technicianId Int?
+  engineer     User?       @relation("EngineerReports", fields: [engineerId], references: [id])
+  engineerId   Int?
+  
+  status        ReportStatus @default(DRAFT)
+  testing_type  TestingType  @default(FULL) // <-- ADD THIS FIELD
+
+  data          Json
+  // ---------------------------------
+
+  ReportImages  ReportImage[] 
+
+  rejection_reason String?
+  createdAt        DateTime  @default(now())
+  submitted_at     DateTime?
+  approved_at      DateTime?
+}
+
+model ReportImage {
+  id        Int      @id @default(autoincrement())
+  report    Report   @relation(fields: [reportId], references: [id])
+  reportId  Int
+
+  url       String   // The path to the file, e.g., /uploads/image-123.png
+  caption   String?  // The caption entered by the user
+
+  createdAt DateTime @default(now())
+}

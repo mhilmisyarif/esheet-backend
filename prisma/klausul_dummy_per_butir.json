@@ -1,0 +1,496 @@
+[
+    {
+        "klausul": "5",
+        "judul": "Penandaan",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "5.1",
+                "butir": [
+                    {
+                        "kode": "5.1.a",
+                        "teks": "Merek dagang, nama pabrikan atau nama vendor bertanggung jawab",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.1.b",
+                        "teks": "Tegangan pengenal atau julat tegangan ('V' atau 'Volt')",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.1.c",
+                        "teks": "Jumlah daya pengenal ('W' atau 'Watt')",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.1.d",
+                        "teks": "Frekuensi pengenal ('Hz')",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "5.2",
+                "butir": [
+                    {
+                        "kode": "5.2.a",
+                        "teks": "Lambang untuk posisi penyalaan apabila dibatasi (lihat Lampiran B SNI IEC 62560:2015)",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.2.b",
+                        "teks": "Arus pengenal (ditandai 'A' atau 'ampere')",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.2.c",
+                        "teks": "Pernyataan tentang peningkatan berat lampu dan dampaknya pada kestabilan mekanik luminer dan fiting",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.2.d",
+                        "teks": "Kondisi atau pembatasan khusus",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.2.e",
+                        "teks": "Perlindungan mata (IEC/TR 62471-2)",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "5.3",
+                "butir": [
+                    {
+                        "kode": "5.3.a",
+                        "teks": "Kesesuaian 5.1 dicek dengan pemeriksaan visual",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "5.3.b",
+                        "teks": "Ketahanan penandaan diuji dengan menggosok kain basah dan kain berheksana masing-masing selama 15 detik",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "6",
+        "judul": "Mampu Tukar",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "6.1",
+                "butir": [
+                    {
+                        "kode": "6.1.a",
+                        "teks": "Uji sesuai IEC 60061-1 dan IEC 60061-3 untuk dudukan lampu",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "6.1.b",
+                        "teks": "Nilai momen tekuk tidak melebihi nilai pada tabel standar",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "6.2",
+                "butir": [
+                    {
+                        "kode": "6.2.a",
+                        "teks": "Berat lampu tidak melebihi batas dalam tabel 2",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "6.2.b",
+                        "teks": "Lampu menahan gaya tarikan aksial dan momen tekuk eksternal tanpa kerusakan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "7",
+        "judul": "Perlindungan terhadap kontak tidak disengaja dengan bagian bertegangan",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "7.1",
+                "butir": [
+                    {
+                        "kode": "7.1.a",
+                        "teks": "Tidak ada bagian logam bertegangan yang dapat diakses tanpa luminer tambahan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "7.1.b",
+                        "teks": "Kesesuaian dicek menggunakan jari uji dengan gaya 10 N",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "7.2",
+                "butir": [
+                    {
+                        "kode": "7.2.a",
+                        "teks": "Lampu dengan kaki lampu sekrup Edison harus sesuai dengan ketentuan tak terakses bagian bertegangan lampu GLS",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "8",
+        "judul": "Ketahanan Insulasi dan Kuat Listrik setelah perlakuan kelembaban",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "8.1",
+                "butir": [
+                    {
+                        "kode": "8.1.a",
+                        "teks": "Uji resistansi isolasi antara bagian bertegangan dan bagian yang dapat diakses",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "8.1.b",
+                        "teks": "Resistansi minimum 4 MΩ",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "8.2",
+                "butir": [
+                    {
+                        "kode": "8.2.a",
+                        "teks": "Kondisi 48 jam pada kelembaban 91–95% dan suhu 20–30°C",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "8.3",
+                "butir": [
+                    {
+                        "kode": "8.3.a",
+                        "teks": "Diterapkan tegangan AC sesuai IEC 60598-1 tanpa flash-over atau tembus listrik",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "9",
+        "judul": "Kuat Mekanik",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "9.1",
+                "butir": [
+                    {
+                        "kode": "9.1.a",
+                        "teks": "Lampu baru diuji ketahanan torsi hingga nilai pada tabel 3",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "9.1.b",
+                        "teks": "Pergeseran kaki lampu tidak lebih dari 10°",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "9.2",
+                "butir": [
+                    {
+                        "kode": "9.2.a",
+                        "teks": "Setelah pengujian, lampu tetap memenuhi syarat insulasi dan kuat listrik",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "10",
+        "judul": "Kenaikan Suhu Kaki Lampu",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "10.1",
+                "butir": [
+                    {
+                        "kode": "10.1.a",
+                        "teks": "Dilakukan pada tegangan maksimum dalam rentang pengenal",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "10.1.b",
+                        "teks": "Kenaikan suhu kaki lampu ≤ 120 K",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "11",
+        "judul": "Ketahanan terhadap Panas",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "11.1",
+                "butir": [
+                    {
+                        "kode": "11.1.a",
+                        "teks": "Bagian bertegangan diuji pada 125°C",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "11.1.b",
+                        "teks": "Bagian lainnya diuji pada 80°C",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "11.1.c",
+                        "teks": "Diameter lekukan maksimum ≤ 2 mm",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "12",
+        "judul": "Ketahanan terhadap Api dan Penyalaan",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "12.1",
+                "butir": [
+                    {
+                        "kode": "12.1.a",
+                        "teks": "Ujung kawat bara 650°C diterapkan selama 30 menit",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "12.1.b",
+                        "teks": "Tidak boleh ada nyala atau api yang menetap setelah 30 detik",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "13",
+        "judul": "Kondisi Kegagalan",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "13.1",
+                "butir": [
+                    {
+                        "kode": "13.1.a",
+                        "teks": "Lampu tidak boleh merusak keselamatan selama kondisi kegagalan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "13.1.b",
+                        "teks": "Tidak boleh terbakar atau menghasilkan asap mudah terbakar",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "13.2",
+                "butir": [
+                    {
+                        "kode": "13.2.a",
+                        "teks": "Diuji pada tegangan 150% daya pengenal",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "13.2.b",
+                        "teks": "Lampu harus tetap aman minimal 15 menit setelah stabilisasi",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "13.3",
+                "butir": [
+                    {
+                        "kode": "13.3.a",
+                        "teks": "Diuji pada kondisi paling buruk sesuai pabrikan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "13.4",
+                "butir": [
+                    {
+                        "kode": "13.4.a",
+                        "teks": "Uji satu kapasitor pada satu waktu untuk memeriksa keselamatan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "13.5",
+                "butir": [
+                    {
+                        "kode": "13.5.a",
+                        "teks": "Komponen diuji dengan jembatan terbuka untuk menilai efek keselamatan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "klausul": "14",
+        "judul": "Jarak Rambat dan Jarak Bebas",
+        "meta": {
+            "tester_name": "",
+            "test_datetime": "",
+            "temperature": null,
+            "humidity": null
+        },
+        "sub_klausul": [
+            {
+                "kode": "14.1",
+                "butir": [
+                    {
+                        "kode": "14.1.a",
+                        "teks": "Jarak rambat dan jarak bebas sesuai tabel standar SNI IEC 62560",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "14.1.b",
+                        "teks": "Tidak boleh kurang dari nilai pada tabel 3 dan 4",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "14.1.c",
+                        "teks": "Jalur udara <1 mm diabaikan dalam perhitungan",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            },
+            {
+                "kode": "14.2",
+                "butir": [
+                    {
+                        "kode": "14.2.a",
+                        "teks": "Selungkup logam dengan lapisan insulasi sesuai IEC 60598-1",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    },
+                    {
+                        "kode": "14.2.b",
+                        "teks": "Jarak harus dijaga dalam kondisi sekitar paling buruk",
+                        "hasil_catatan": "",
+                        "keputusan": null
+                    }
+                ]
+            }
+        ]
+    }
+]
