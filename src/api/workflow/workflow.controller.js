@@ -6,10 +6,14 @@ exports.createFullReportWorkflow = async (req, res) => {
     const {
         order_no,
         applicant,
+        applicant_address,
         iwo_no,
         testStandardId,
         brand,
         model,
+        factory,
+        factory_address,
+        country_origin,
         testingType, // "FULL" or "VERIFICATION"
         selectedClauses, // ["5", "7"]
     } = req.body;
@@ -49,10 +53,11 @@ exports.createFullReportWorkflow = async (req, res) => {
             // a. Create or find the Order
             const order = await tx.order.upsert({
                 where: { order_no: order_no },
-                update: { applicant: applicant },
+                update: { applicant: applicant, address: applicant_address },
                 create: {
                     order_no: order_no,
                     applicant: applicant,
+                    address: applicant_address,
                     labId: lab.id,
                 },
             });
@@ -66,6 +71,9 @@ exports.createFullReportWorkflow = async (req, res) => {
                     name: standard.name, // Use standard's name as sample name
                     brand: brand,
                     model: model,
+                    factory: factory,
+                    factory_address: factory_address,
+                    country_origin: country_origin,
                 },
             });
 

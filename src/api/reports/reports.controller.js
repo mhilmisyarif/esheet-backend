@@ -1,244 +1,231 @@
-const { PrismaClient } = require('@prisma/client');
-const { isReportComplete } = require('../../services/report.validator');
-const { generateReportDocx } = require('../../services/report.generator');
-const prisma = new PrismaClient();
+const service = require('./reports.service');
+const klausulService = require('./klausul-status.service');
+const { isKlausulComplete } = require('../../services/report.validator');
+const { generateDraftDocx } = require('../../services/draft.generator');
+const { generateDatasheetPdf } = require('../../services/datasheet.generator');
 
-// (Step 3) Create a new draft report from a sample
-exports.createReport = async (req, res) => {
-    const {
-        sampleId,
-        technicianId,
-        testingType, // "FULL" or "VERIFICATION"
-        selectedClauses // e.g., ["5", "7", "11"] (only for VERIFICATION)
-    } = req.body;
+// ── Standard report CRUD (unchanged) ─────────────────────────────────────────
 
+exports.createReport = async (req, res, next) => {
+    const { sampleId, testingType, selectedClauses } = req.body;
+    if (!sampleId || !testingType)
+        return res.status(400).json({ error: 'sampleId and testingType are required.' });
     try {
-        // 1. Find the sample and its TestStandard template
-        const sample = await prisma.sample.findUnique({
-            where: { id: parseInt(sampleId, 10) },
-            include: { testStandard: true },
+        const report = await service.createReport({
+            sampleId: parseInt(sampleId, 10),
+            technicianId: req.user.id,
+            testingType,
+            selectedClauses,
         });
-        if (!sample) {
-            return res.status(404).json({ error: 'Sample not found.' });
-        }
-
-        // 2. Get the full template data
-        const fullTemplateData = sample.testStandard.template_data;
-        let reportData;
-
-        // 3. Filter data based on testing type
-        if (testingType === 'VERIFICATION') {
-            if (!selectedClauses || !Array.isArray(selectedClauses)) {
-                return res.status(400).json({ error: '`selectedClauses` array is required for Verification testing.' });
-            }
-            // Filter the full template to only include selected clauses
-            reportData = fullTemplateData.filter(klausul =>
-                selectedClauses.includes(klausul.klausul) // 'klausul.klausul' is the clause number, e.g., "5"
-            );
-        } else {
-            // For "FULL" testing, use the complete template
-            reportData = fullTemplateData;
-        }
-
-        // 4. Create the report
-        const report = await prisma.report.create({
-            data: {
-                sampleId: sample.id,
-                technicianId: parseInt(technicianId, 10),
-                status: 'DRAFT',
-                testing_type: testingType === 'VERIFICATION' ? 'VERIFICATION' : 'FULL',
-                data: reportData, // Store the full or filtered JSON
-            },
-        });
-
         res.status(201).json(report);
-
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Failed to create report.' });
-    }
+    } catch (e) { next(e); }
 };
 
-// (Step 4) Get a single report for the editor
-exports.getReport = async (req, res) => {
-    const { id } = req.params;
-    const report = await prisma.report.findUnique({
-        where: { id: parseInt(id, 10) },
-        include: {
-            sample: { // Include sample info for the header
-                include: {
-                    order: true // And order info
-                }
-            }
-        },
-    });
-    if (!report) {
-        return res.status(404).json({ error: 'Report not found' });
-    }
-    res.json(report);
-};
-
-// (Step 4) The "Autosave" endpoint
-exports.updateReportData = async (req, res) => {
-    const { id } = req.params;
-    const { data } = req.body; // `data` is the full klausul JSON
-
-    if (!data) {
-        return res.status(400).json({ error: '`data` (JSON) is required.' });
-    }
+exports.getReport = async (req, res, next) => {
     try {
-        const updatedReport = await prisma.report.update({
-            where: { id: parseInt(id, 10) },
-            data: { data: data }, // Overwrite the JSONB field
-        });
-        res.json({ message: 'Autosave successful' });
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to save report.' });
-    }
+        const report = await service.getReportById(parseInt(req.params.reportId, 10));
+        if (!report) return res.status(404).json({ error: 'Report not found.' });
+
+        // Attach klausul statuses to the response
+        const klausulStatuses = await klausulService.getKlausulStatuses(report.id);
+        res.json({ ...report, klausulStatuses });
+    } catch (e) { next(e); }
 };
 
-// (Step 5) The "Submit" endpoint
-exports.submitReport = async (req, res) => {
-    const { id } = req.params;
-    const report = await prisma.report.findUnique({
-        where: { id: parseInt(id, 10) },
-    });
-    if (!report) {
-        return res.status(404).json({ error: 'Report not found.' });
-    }
-
-    const complete = isReportComplete(report.data);
-    if (!complete) {
-        return res.status(400).json({
-            error: 'Report is incomplete. Please fill all required fields.',
-        });
-    }
-
-    const submittedReport = await prisma.report.update({
-        where: { id: parseInt(id, 10) },
-        data: {
-            status: 'SUBMITTED',
-            submitted_at: new Date(),
-        },
-    });
-    res.json(submittedReport);
-};
-
-// Gets a report using the Sample ID
-exports.getReportBySampleId = async (req, res) => {
-    const { sampleId } = req.params;
-    const report = await prisma.report.findUnique({
-        where: { sampleId: parseInt(sampleId, 10) }, // Find by sampleId
-        include: {
-            sample: { include: { order: true } },
-            ReportImages: true
-        },
-    });
-    if (!report) {
-        // This is okay, it might just not be created yet
-        return res.status(404).json({ error: 'Report not found for this sample.' });
-    }
-    res.json(report);
-};
-
-// POST /api/reports/:id/approve
-exports.approveReport = async (req, res) => {
-    const { id } = req.params;
-    const engineerId = req.user.id; // Get ID from logged-in engineer
-
+exports.getReportBySampleId = async (req, res, next) => {
     try {
-        const report = await prisma.report.findUnique({ where: { id: parseInt(id) } });
+        const report = await service.getReportBySampleId(parseInt(req.params.sampleId, 10));
+        if (!report) return res.status(404).json({ error: 'Report not found for this sample.' });
 
-        // Only an engineer can approve a "SUBMITTED" report
-        if (report.status !== 'SUBMITTED') {
-            return res.status(400).json({ error: `Report is not in SUBMITTED state. Current state: ${report.status}` });
+        const klausulStatuses = await klausulService.getKlausulStatuses(report.id);
+        res.json({ ...report, klausulStatuses });
+    } catch (e) { next(e); }
+};
+
+exports.updateReportData = async (req, res, next) => {
+    const { data } = req.body;
+    if (!data) return res.status(400).json({ error: 'data field is required.' });
+    try {
+        await service.updateReportData({
+            reportId: parseInt(req.params.reportId, 10),
+            data,
+            userId: req.user.id,
+            userRole: req.user.role,
+        });
+        res.json({ message: 'Saved.' });
+    } catch (e) { next(e); }
+};
+
+// ── NEW: Per-klausul submit ───────────────────────────────────────────────────
+
+/**
+ * POST /api/reports/:reportId/submit-klausuls
+ * Body: { klausulCodes: ["6", "7"] }
+ *
+ * Technician submits one or more klausuls for engineer review.
+ * Other klausuls remain as DRAFT and stay editable.
+ */
+exports.submitKlausuls = async (req, res, next) => {
+    const { klausulCodes } = req.body;
+
+    if (!Array.isArray(klausulCodes) || klausulCodes.length === 0) {
+        return res.status(400).json({ error: 'klausulCodes must be a non-empty array.' });
+    }
+
+    const reportId = parseInt(req.params.reportId, 10);
+
+    // Validate each klausul is complete before allowing submission
+    try {
+        const report = await service.getReportById(reportId);
+        if (!report) return res.status(404).json({ error: 'Report not found.' });
+
+        const incompleteKlausuls = klausulCodes.filter(code => {
+            const klausul = (report.data || []).find(k => k.klausul === code);
+            return klausul && !isKlausulComplete(klausul);
+        });
+
+        if (incompleteKlausuls.length > 0) {
+            return res.status(400).json({
+                error: `These klausuls have unfilled items: ${incompleteKlausuls.join(', ')}. Fill all test items before submitting.`,
+                incompleteKlausuls,
+            });
         }
 
-        const approvedReport = await prisma.report.update({
-            where: { id: parseInt(id) },
-            data: {
-                status: 'APPROVED',
-                approved_at: new Date(),
-                engineerId: engineerId,
-            },
+        const statuses = await klausulService.submitKlausuls({
+            reportId,
+            klausulCodes,
+            userId: req.user.id,
+            userRole: req.user.role,
         });
-        res.json(approvedReport);
-
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to approve report.' });
-    }
+        res.json({ message: 'Klausuls submitted successfully.', klausulStatuses: statuses });
+    } catch (e) { next(e); }
 };
 
-// POST /api/reports/:id/reject
-exports.rejectReport = async (req, res) => {
-    const { id } = req.params;
-    const { reason } = req.body;
-    const engineerId = req.user.id;
+// ── NEW: Per-klausul approve (with optional inline corrections) ───────────────
 
-    if (!reason) {
-        return res.status(400).json({ error: 'A "reason" for rejection is required.' });
+/**
+ * POST /api/reports/:reportId/approve-klausuls
+ * Body: {
+ *   klausuls: [
+ *     { klausulCode: "6", corrections: "Changed 6.1.a from TB to L", updatedData: { ...klausulObject } },
+ *     { klausulCode: "7" }
+ *   ]
+ * }
+ *
+ * Engineer approves one or more submitted klausuls.
+ * If updatedData is provided, the clause data is updated in report.data before approving.
+ * If all klausuls are now approved, the report is locked (status = APPROVED).
+ */
+exports.approveKlausuls = async (req, res, next) => {
+    const { klausuls } = req.body;
+
+    if (!Array.isArray(klausuls) || klausuls.length === 0) {
+        return res.status(400).json({ error: 'klausuls must be a non-empty array.' });
     }
 
     try {
-        const report = await prisma.report.findUnique({ where: { id: parseInt(id) } });
-
-        if (report.status !== 'SUBMITTED') {
-            return res.status(400).json({ error: `Report is not in SUBMITTED state. Current state: ${report.status}` });
-        }
-
-        const rejectedReport = await prisma.report.update({
-            where: { id: parseInt(id) },
-            data: {
-                status: 'DRAFT', // <-- Set back to DRAFT so technician can fix it
-                rejection_reason: reason,
-                engineerId: engineerId, // Log who rejected it
-            },
+        const statuses = await klausulService.approveKlausuls({
+            reportId: parseInt(req.params.reportId, 10),
+            klausuls,
+            engineerId: req.user.id,
         });
-        res.json(rejectedReport);
-
-    } catch (e) {
-        res.status(500).json({ error: 'Failed to reject report.' });
-    }
+        res.json({ message: 'Klausuls approved.', klausulStatuses: statuses });
+    } catch (e) { next(e); }
 };
 
-// GET /api/reports/:id/download
-exports.downloadReport = async (req, res) => {
-    const { id } = req.params;
+// ── NEW: Get klausul statuses ────────────────────────────────────────────────
+
+/**
+ * GET /api/reports/:reportId/klausul-statuses
+ * Returns { klausulCode: KlausulStatus } map for the report.
+ */
+exports.getKlausulStatuses = async (req, res, next) => {
     try {
-        // Fetch the full report with all relations
-        const report = await prisma.report.findUnique({
-            where: { id: parseInt(id) },
-            include: {
-                sample: { include: { order: true } },
-                ReportImages: true,
-            }
-        });
-
-        if (!report) {
-            return res.status(404).json({ error: 'Report not found' });
-        }
-
-        if (report.status !== 'APPROVED') {
-            return res.status(403).json({ error: 'Report must be in APPROVED state to download.' });
-        }
-
-        // Generate the DOCX buffer
-        const buffer = await generateReportDocx(report);
-
-        // Set headers to trigger browser download
-        res.setHeader(
-            'Content-Disposition',
-            `attachment; filename="LHU-${report.sample.model}-${report.id}.docx"`
+        const statuses = await klausulService.getKlausulStatuses(
+            parseInt(req.params.reportId, 10)
         );
-        res.setHeader(
-            'Content-Type',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-        );
+        res.json(statuses);
+    } catch (e) { next(e); }
+};
+
+// ── NEW: Update document metadata (Drafter) ──────────────────────────────────
+
+/**
+ * PATCH /api/reports/:reportId/doc-metadata
+ * Body: { applicant, address, standard, location, notes }
+ *
+ * Drafter fills in document metadata before downloading the Draft.
+ */
+exports.updateDocMetadata = async (req, res, next) => {
+    try {
+        const updated = await klausulService.updateDocMetadata({
+            reportId: parseInt(req.params.reportId, 10),
+            metadata: req.body,
+            userId: req.user.id,
+            userRole: req.user.role,
+        });
+        res.json(updated);
+    } catch (e) { next(e); }
+};
+
+// ── DOWNLOADS — two separate documents ──────────────────────────────────────
+
+/**
+ * GET /api/reports/:reportId/download/draft
+ * Accessible by: ENGINEER, DRAFTER
+ * Returns the Draft document (current Word format).
+ * Does NOT require full approval — can be downloaded at any stage.
+ */
+exports.downloadDraft = async (req, res, next) => {
+    try {
+        const report = await service.getReportForDownload(parseInt(req.params.reportId, 10));
+        if (!report) return res.status(404).json({ error: 'Report not found.' });
+
+        const klausulStatuses = await klausulService.getKlausulStatuses(report.id);
+        const buffer = await generateDraftDocx(report, klausulStatuses);
+
+        res.setHeader('Content-Disposition',
+            `attachment; filename="DRAFT-${report.sample.model}-${report.id}.docx"`);
+        res.setHeader('Content-Type',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+        res.send(buffer);
+    } catch (e) { next(e); }
+};
+
+/**
+ * GET /api/reports/:reportId/download/datasheet
+ * Accessible by: TECHNICIAN only
+ * Returns the Datasheet document — includes per-klausul barcodes and tester info.
+ * Only approved klausuls are included.
+ */
+exports.downloadDatasheet = async (req, res, next) => {
+    try {
+        const report = await service.getReportForDownload(parseInt(req.params.reportId, 10));
+        if (!report) return res.status(404).json({ error: 'Report not found.' });
+
+        const klausulStatuses = await klausulService.getKlausulStatuses(report.id);
+
+        // Must have at least one approved klausul
+        const hasApproved = Object.values(klausulStatuses).some(s => s.status === 'APPROVED');
+        if (!hasApproved) {
+            return res.status(400).json({
+                error: 'At least one klausul must be approved before downloading the datasheet.',
+            });
+        }
+
+        const { buffer, password } = await generateDatasheetPdf(report, klausulStatuses);
+
+        const filename = `DATASHEET-${report.sample.model}-${report.id}.pdf`;
+
+        // Return password in response header so the frontend can show it to the user
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('X-Datasheet-Password', password);
+        // Expose the custom header to the browser (CORS)
+        res.setHeader('Access-Control-Expose-Headers', 'X-Datasheet-Password');
 
         res.send(buffer);
-
     } catch (e) {
-        console.error('Download error:', e);
-        res.status(500).json({ error: 'Failed to generate report.' });
+        next(e);
     }
 };

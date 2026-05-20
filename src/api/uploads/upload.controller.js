@@ -15,11 +15,15 @@ exports.uploadReportImage = async (req, res) => {
         // This assumes your server will serve the 'uploads' folder statically.
         const imageUrl = `/uploads/${req.file.filename}`;
 
+        // Optional gallery category — "COMPONENT" or "SAMPLE" (default).
+        const category = req.body.category === 'COMPONENT' ? 'COMPONENT' : 'SAMPLE';
+
         const image = await prisma.reportImage.create({
             data: {
                 reportId: parseInt(reportId),
                 url: imageUrl,
-                caption: '', // Default empty caption
+                caption: (req.body.caption || '').toString(),
+                category,
             }
         });
 

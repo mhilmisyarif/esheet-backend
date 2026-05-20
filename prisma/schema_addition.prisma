@@ -1,0 +1,26 @@
+// -------------------------------------------------------
+// ADD THIS MODEL to prisma/schema.prisma
+// Place it after the ReportImage model
+// Then run: npx prisma migrate dev --name add_clause_tables
+// -------------------------------------------------------
+
+model ClauseTable {
+  id          Int      @id @default(autoincrement())
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId    Int
+
+  clauseCode  String   // e.g. "6.1" — matches klausul.kode in report.data JSON
+  title       String   @default("")
+  headers     String[] // column headers e.g. ["Kode Sampel", "01", "02", ...]
+  rows        Json     // String[][] — each row is an array of cell values
+  notes       String   @default("")
+  order       Int      @default(0) // sort order within a clause
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// -------------------------------------------------------
+// ALSO ADD this relation to the Report model:
+// ClauseTables  ClauseTable[]
+// -------------------------------------------------------

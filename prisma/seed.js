@@ -7,20 +7,19 @@ const prisma = new PrismaClient();
 async function main() {
     console.log('Start seeding ...');
 
-    // 1. Seed Labs (Q2)
+    // 1. Seed Labs
     const lab04 = await prisma.lab.upsert({
         where: { lab_code: '04' },
         update: {},
         create: {
             lab_code: '04',
-            name: 'PENCAHAYAAN',
+            name: 'PENCAHAYAAN (Lighting)',
         },
     });
-    // ... create other labs ...
     console.log('Seeded labs...');
 
-    // 2. Seed Test Standard (this code already exists)
-    await prisma.testStandard.upsert({
+    // 2. Seed Test Standard
+    const ledStandard = await prisma.testStandard.upsert({
         where: { name: 'Lampu LED Swa-Balast' },
         update: {},
         create: {
@@ -30,8 +29,6 @@ async function main() {
         },
     });
     console.log('Seeded test standards...');
-
-    // --- ADD ALL THE CODE BELOW THIS LINE ---
 
     // 3. Seed a Test User (Technician)
     console.log('Seeding users...');
@@ -58,56 +55,82 @@ async function main() {
         },
     });
 
-    // 4. Seed an Order (using data from the docx [cite: 3])
-    console.log('Seeding orders and samples...');
-    const lab04_db = await prisma.lab.findUnique({ where: { lab_code: '04' } });
-
+    // 4. Seed Report 1: DRAFT (Existing)
     const order1 = await prisma.order.upsert({
-        where: { order_no: 'CBT/3801/20-104-01/000038/01/2025-1' }, // A unique order number
+        where: { order_no: 'CBT/3801/20-104-01/000038/01/2025-1' },
         update: {},
         create: {
-            order_no: 'CBT/3801/20-104-01/000038/01/2025-1', // Using a realistic one
-            labId: lab04_db.id,
+            order_no: 'CBT/3801/20-104-01/000038/01/2025-1',
+            labId: lab04.id,
             applicant: 'PT MEGA CAKRA NUSANTARA',
             address: 'SOVOISM OFFICE BUILDING JL DR CIPTO NO 20, Semarang',
         },
     });
 
-    // 5. Seed a Sample (using data from the docx [cite: 3, 4])
-    const ledStandard = await prisma.testStandard.findUnique({
-        where: { name: 'Lampu LED Swa-Balast' },
-    });
-
     const sample1 = await prisma.sample.upsert({
-        where: { id: 1 }, // Using a simple ID for the first sample
+        where: { id: 1 },
         update: {},
         create: {
             orderId: order1.id,
             testStandardId: ledStandard.id,
-            iwo_no: 'SER.IWO.25.6981', // From your project brief
+            iwo_no: 'SER.IWO.25.6981',
             name: 'Lampu LED Swa-balast',
             brand: 'KISEKI',
             model: 'CKLB 13W',
         },
     });
 
-    // 6. Seed a Draft Report for that Sample
-    console.log('Seeding draft report...');
     await prisma.report.upsert({
         where: { sampleId: sample1.id },
         update: {},
         create: {
             sampleId: sample1.id,
             technicianId: techUser.id,
-            engineerId: enginnerUser.id,
             status: 'DRAFT',
             testing_type: 'FULL',
-            // Copy the template from the standard into the report
             data: ledStandard.template_data,
         },
     });
-    // ... create other standards ...
-    console.log('Seeded test standards...');
+
+    // 5. Seed Report 2: APPROVED (New)
+    const order2 = await prisma.order.upsert({
+        where: { order_no: 'CBT/3801/20-104-01/999999/01/2025-1' },
+        update: {},
+        create: {
+            order_no: 'CBT/3801/20-104-01/999999/01/2025-1',
+            labId: lab04.id,
+            applicant: 'PT SINAR TERANG',
+            address: 'Jl. Industri No. 88, Surabaya',
+        },
+    });
+
+    const sample2 = await prisma.sample.upsert({
+        where: { id: 2 },
+        update: {},
+        create: {
+            orderId: order2.id,
+            testStandardId: ledStandard.id,
+            iwo_no: 'SER.IWO.25.7000',
+            name: 'Lampu LED Swa-balast',
+            brand: 'PHILLIPS',
+            model: 'LED-10W',
+        },
+    });
+
+    await prisma.report.upsert({
+        where: { sampleId: sample2.id },
+        update: {},
+        create: {
+            sampleId: sample2.id,
+            technicianId: techUser.id,
+            engineerId: enginnerUser.id, // Approved by Ahmad Fasya
+            status: 'APPROVED',
+            testing_type: 'FULL',
+            data: ledStandard.template_data,
+            submitted_at: new Date('2025-10-05T10:00:00Z'),
+            approved_at: new Date('2025-10-06T14:30:00Z'),
+        },
+    });
 
     console.log('Seeding finished.');
 }

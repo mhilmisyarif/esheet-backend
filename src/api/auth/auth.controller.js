@@ -1,73 +1,58 @@
-const { PrismaClient } = require('@prisma/client');
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const prisma = new PrismaClient();
+const { registerUser, loginUser, getUserById } = require('./auth.service');
 
 // POST /api/auth/register
-exports.register = async (req, res) => {
-    const { email, password, name, role } = req.body;
+exports.register = async (req, res, next) => {
+    const { email, password, name } = req.body;
+
+    if (!email || !password || !name) {
+        return res.status(400).json({ error: 'Email, password, and name are required.' });
+    }
 
     try {
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const user = await prisma.user.create({
-            data: {
-                email,
-                password_hash: hashedPassword,
-                name,
-                role: role || 'TECHNICIAN', // Default to TECHNICIAN
-            },
-        });
-
-        // Don't return the password
-        delete user.password_hash;
+        const user = await registerUser({ email, password, name });
         res.status(201).json(user);
-
     } catch (e) {
-        if (e.code === 'P2002') { // Prisma code for unique constraint violation
-            return res.status(400).json({ error: 'Email already exists.' });
+        if (e.code === 'P2002') {
+            return res.status(409).json({ error: 'Email already exists.' });
         }
-        res.status(500).json({ error: 'Failed to register user.' });
+        next(e);
     }
 };
 
 // POST /api/auth/login
-exports.login = async (req, res) => {
+exports.login = async (req, res, next) => {
     const { email, password } = req.body;
 
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Email and password are required.' });
+    }
+
     try {
-        const user = await prisma.user.findUnique({
-            where: { email },
-        });
+        const result = await loginUser({ email, password });
+
+        if (!result) {
+            return res.status(401).json({ error: 'Invalid credentials.' });
+        }
+
+        res.json(result);
+    } catch (e) {
+        next(e);
+    }
+};
+
+// GET /api/auth/me
+// Called by the frontend on app load to validate an existing token
+exports.getMe = async (req, res, next) => {
+    try {
+        const user = await getUserById(req.user.id);
 
         if (!user) {
-            return res.status(401).json({ error: 'Invalid credentials.' });
+            // Token was valid but user no longer exists in DB
+            return res.status(401).json({ error: 'User not found.' });
         }
 
-        // Check password
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-        if (!isMatch) {
-            return res.status(401).json({ error: 'Invalid credentials.' });
-        }
-
-        // Create a JWT
-        // We'll use a simple secret from .env, add JWT_SECRET=your-secret-key
-        const token = jwt.sign(
-            {
-                userId: user.id,
-                role: user.role
-            },
-            process.env.JWT_SECRET || 'your-default-secret',
-            { expiresIn: '24h' } // Token expires in 24 hours
-        );
-
-        // Don't return the password
-        delete user.password_hash;
-
-        res.json({ token, user });
-
+        res.json(user);
     } catch (e) {
-        res.status(500).json({ error: 'Login failed.' });
+        next(e);
     }
 };

@@ -14,7 +14,7 @@ datasource db {
 enum UserRole {
   TECHNICIAN
   ENGINEER
-  ADMIN
+  DRAFTER        // NEW — view + download Draft + fill document metadata
 }
 
 model User {
@@ -27,6 +27,11 @@ model User {
   // Relations
   ReportsAsTechnician Report[] @relation("TechnicianReports")
   ReportsAsEngineer   Report[] @relation("EngineerReports")
+  CreatedTemplates  TableTemplate[]  @relation("TemplateCreator")
+  KlausulsSubmitted  KlausulStatus[] @relation("KlausulSubmitter")
+  KlausulsApproved   KlausulStatus[] @relation("KlausulApprover")
+
+  HistoryLogs         ReportHistory[]
 }
 
 // --- LABS & STANDARDS (Q2) ---
@@ -43,6 +48,10 @@ model Lab {
 model TestStandard {
   id            Int    @id @default(autoincrement())
   name          String @unique // e.g., "Lampu LED Swa-Balast"
+
+  standard_numbers String[]  // e.g. "SNI IEC 62560:2015"
+  updatedAt       DateTime @default(now()) @updatedAt // Automatically tracks last edit
+
   lab           Lab    @relation(fields: [labId], references: [id])
   labId         Int
 
@@ -51,6 +60,7 @@ model TestStandard {
 
   // Relations
   Samples Sample[]
+  TableTemplates  TableTemplate[]
 }
 
 // --- WORKFLOW ---
@@ -79,16 +89,42 @@ model Sample {
   brand  String
   model  String
 
+  factory         String? // Manufacturer name
+  factory_address String? // Manufacturer address
+  country_origin  String? // Country of manufacture
+
   // Relations
-  Report Report? // A sample has one report
+  Report     Report?     // A sample has one report
+  Components  Component[] // Tested components recorded for this sample
+}
+
+// Components tested as part of a sample (shown on the Datasheet Detail page)
+model Component {
+  id          Int      @id @default(autoincrement())
+  sample      Sample   @relation(fields: [sampleId], references: [id], onDelete: Cascade)
+  sampleId    Int
+
+  objek       String   // Objek / part No.
+  pabrikan    String?  // Pabrikan / merk dagang
+  tipe        String?  // Tipe / model
+  data_teknis String?  // Data teknis
+  standar     String?  // Standar
+  tanda       String?  // Tanda sertifikasi
+
+  createdAt   DateTime @default(now())
 }
 
 // --- THE E-SHEET (HYBRID MODEL) ---
 enum ReportStatus {
+  DRAFT          // no klausul submitted yet, or mix of draft/submitted/approved
+  IN_PROGRESS    // at least one klausul submitted, others still draft
+  APPROVED       // all klausuls approved
+}
+
+enum KlausulStatusEnum {
   DRAFT
   SUBMITTED
   APPROVED
-  REJECTED
 }
 
 enum TestingType {
@@ -97,27 +133,62 @@ enum TestingType {
 }
 
 model Report {
-  id        Int      @id @default(autoincrement())
-  sample    Sample   @relation(fields: [sampleId], references: [id])
-  sampleId  Int      @unique
+  id               Int           @id @default(autoincrement())
+  sample           Sample        @relation(fields: [sampleId], references: [id])
+  sampleId         Int           @unique
+
+  technician       User?         @relation("TechnicianReports", fields: [technicianId], references: [id])
+  technicianId     Int?
+  engineer         User?         @relation("EngineerReports", fields: [engineerId], references: [id])
+  engineerId       Int?
+
+  status           ReportStatus  @default(DRAFT)
+  testing_type     TestingType   @default(FULL)
   
-  technician   User?       @relation("TechnicianReports", fields: [technicianId], references: [id])
-  technicianId Int?
-  engineer     User?       @relation("EngineerReports", fields: [engineerId], references: [id])
-  engineerId   Int?
-  
-  status        ReportStatus @default(DRAFT)
-  testing_type  TestingType  @default(FULL) // <-- ADD THIS FIELD
+  data             Json
+  // document metadata — filled by Drafter before download
+  doc_applicant    String?
+  doc_address      String?
+  doc_standard     String?
+  doc_location     String?       @default("Laboratorium PT. SUCOFINDO")
+  doc_notes        String?
+  approved_at      DateTime?     // set when ALL klausuls are approved
+  createdAt        DateTime      @default(now())
 
-  data          Json
-  // ---------------------------------
+  ReportHistory    ReportHistory[]
+  ReportImages     ReportImage[]
+  TableInstances   TableInstance[]
+  KlausulStatuses  KlausulStatus[]
+  ClauseTables     ClauseTable[]
+}
 
-  ReportImages  ReportImage[] 
 
-  rejection_reason String?
-  createdAt        DateTime  @default(now())
-  submitted_at     DateTime?
-  approved_at      DateTime?
+model KlausulStatus {
+  id           Int               @id @default(autoincrement())
+
+  report       Report            @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId     Int
+
+  klausulCode  String            // e.g. "6", "6.1" — matches klausul.klausul in report.data
+
+  status       KlausulStatusEnum @default(DRAFT)
+
+  // Who submitted this klausul
+  submittedBy  User?             @relation("KlausulSubmitter", fields: [submittedById], references: [id])
+  submittedById Int?
+  submittedAt  DateTime?
+
+  // Who approved this klausul + what corrections were made
+  approvedBy   User?             @relation("KlausulApprover", fields: [approvedById], references: [id])
+  approvedById Int?
+  approvedAt   DateTime?
+  corrections  String?           // engineer's correction notes, if any
+
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([reportId, klausulCode])  // one status row per klausul per report
+  @@index([reportId])
 }
 
 model ReportImage {
@@ -127,6 +198,157 @@ model ReportImage {
 
   url       String   // The path to the file, e.g., /uploads/image-123.png
   caption   String?  // The caption entered by the user
+  category  String   @default("SAMPLE") // "SAMPLE" gallery or "COMPONENT" gallery
 
   createdAt DateTime @default(now())
 }
+
+model ClauseTable {
+  id          Int      @id @default(autoincrement())
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId    Int
+
+  clauseCode  String   // e.g. "6.1" — matches klausul.kode in report.data JSON
+  title       String   @default("")
+  headers     String[] // column headers e.g. ["Kode Sampel", "01", "02", ...]
+  rows        Json     // String[][] — each row is an array of cell values
+  notes       String   @default("")
+  order       Int      @default(0) // sort order within a clause
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model TableTemplate {
+  id             Int          @id @default(autoincrement())
+
+  testStandard   TestStandard @relation(fields: [testStandardId], references: [id], onDelete: Cascade)
+  testStandardId Int
+
+  subClauseCode  String       // e.g. "6.1", "12" — matches sub_klausul.kode in report.data
+  title          String       @default("")
+  order          Int          @default(0)
+
+  // Full structural definition as JSON — see structure docs below
+  definition     Json
+
+  createdBy      User         @relation("TemplateCreator", fields: [createdById], references: [id])
+  createdById    Int
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  instances      TableInstance[]
+
+  @@index([testStandardId, subClauseCode])
+}
+
+model TableInstance {
+  id          Int           @id @default(autoincrement())
+
+  report      Report        @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId    Int
+
+  template    TableTemplate @relation(fields: [templateId], references: [id])
+  templateId  Int
+
+  // Only the cell VALUES are stored here — structure comes from template.definition
+  // Shape: { rows: [ { rowId: string, cells: { colId: value } } ] }
+  // For key_value sections: { kv: { rowId: { value, result } } }
+  data        Json          @default("{}")
+
+  order       Int           @default(0)
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([reportId, templateId])
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEMPLATE DEFINITION JSON STRUCTURE
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// layout: "key_value" | "table" | "mixed"
+//
+// sections: array of section objects
+//   Each section has type: "key_value" | "table"
+//
+// KEY_VALUE SECTION:
+// {
+//   "type": "key_value",
+//   "label": "Section heading (optional)",
+//   "rows": [
+//     {
+//       "id": "kv-1",
+//       "label": "Type / model",
+//       "inputType": "text" | "number",
+//       "resultMode": "manual",   // always manual for kv rows
+//       "required": true
+//     }
+//   ]
+// }
+//
+// TABLE SECTION:
+// {
+//   "type": "table",
+//   "label": "Pengukuran suhu",
+//   "allowAddRows": true,
+//   "rowGroups": [
+//     { "label": "Klausul 12.4 – normal tes 1", "rowIds": ["r1","r2","r3"] }
+//   ],
+//   "columns": [
+//     {
+//       "id": "c-part",
+//       "header": "Bagian yang diukur",
+//       "inputType": "text" | "number" | "dropdown",
+//       "dropdownOptions": ["Terminal","Kabel Internal"],  // only for dropdown
+//       "editable": true,
+//       "isResult": false,
+//       "width": 200   // optional px hint
+//     },
+//     {
+//       "id": "c-dt",
+//       "header": "Maks. dT (K)",
+//       "inputType": "number",
+//       "editable": false,
+//       "isResult": false,
+//       "formula": { "op": "subtract", "a": "c-suhu", "b": "c-ambient" }
+//       // op: "subtract" | "add" | "multiply" | "divide"
+//     },
+//     {
+//       "id": "c-res",
+//       "header": "Keputusan",
+//       "inputType": "result",
+//       "editable": false,
+//       "isResult": true,
+//       "passRule": {
+//         "col": "c-dt",
+//         "op": "lte",            // "lte"|"gte"|"lt"|"gt"|"eq"|"range"
+//         "threshold": 60,
+//         "rangeMin": null,       // used when op = "range"
+//         "rangeMax": null
+//       }
+//     }
+//   ],
+//   "fixedRows": [
+//     { "id": "r1", "cells": { "c-part": "Terminal" } },
+//     { "id": "r2", "cells": { "c-part": "Kabel Internal" } }
+//   ]
+// }
+
+
+model ReportHistory {
+  id        Int      @id @default(autoincrement())
+  report    Report   @relation(fields: [reportId], references: [id])
+  reportId  Int
+  
+  actor     User     @relation(fields: [actorId], references: [id])
+  actorId   Int
+  
+  action    String   // e.g., "SUBMITTED", "REJECTED", "EDITED"
+  comment   String?  // Reason for rejection, or notes
+  
+  timestamp DateTime @default(now())
+}
+
