@@ -162,19 +162,36 @@ function validateDefinition(def) {
                 throw err;
             }
 
-            // Validate formula references exist in same section
+            // Validate formula references exist in same section.
+            // Two shapes: aggregate { op, cols:[...] } and binary { op, a, b }.
             const colIds = new Set(section.columns.map(c => c.id));
             section.columns.forEach((col, ci) => {
                 if (col.formula) {
-                    if (!colIds.has(col.formula.a)) {
-                        const err = new Error(`sections[${i}].columns[${ci}].formula.a references unknown column "${col.formula.a}".`);
-                        err.statusCode = 400;
-                        throw err;
-                    }
-                    if (!colIds.has(col.formula.b)) {
-                        const err = new Error(`sections[${i}].columns[${ci}].formula.b references unknown column "${col.formula.b}".`);
-                        err.statusCode = 400;
-                        throw err;
+                    const f = col.formula;
+                    if (Array.isArray(f.cols)) {
+                        if (f.cols.length === 0) {
+                            const err = new Error(`sections[${i}].columns[${ci}].formula.cols must be non-empty.`);
+                            err.statusCode = 400;
+                            throw err;
+                        }
+                        f.cols.forEach((cid) => {
+                            if (!colIds.has(cid)) {
+                                const err = new Error(`sections[${i}].columns[${ci}].formula.cols references unknown column "${cid}".`);
+                                err.statusCode = 400;
+                                throw err;
+                            }
+                        });
+                    } else {
+                        if (!colIds.has(f.a)) {
+                            const err = new Error(`sections[${i}].columns[${ci}].formula.a references unknown column "${f.a}".`);
+                            err.statusCode = 400;
+                            throw err;
+                        }
+                        if (!colIds.has(f.b)) {
+                            const err = new Error(`sections[${i}].columns[${ci}].formula.b references unknown column "${f.b}".`);
+                            err.statusCode = 400;
+                            throw err;
+                        }
                     }
                 }
                 if (col.passRule && !colIds.has(col.passRule.col)) {

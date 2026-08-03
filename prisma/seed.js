@@ -4,8 +4,20 @@ const bcrypt = require('bcryptjs');
 
 const prisma = new PrismaClient();
 
+// Seed account passwords come from env — never hardcode credentials.
+// SEED_USER_PASSWORD  → demo technician & engineer accounts
+// ADMIN_SEED_PASSWORD → bootstrap admin (registration is ADMIN-only)
+const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD || 'ganti-password-ini';
+const ADMIN_SEED_PASSWORD = process.env.ADMIN_SEED_PASSWORD || 'ganti-password-ini';
+
 async function main() {
     console.log('Start seeding ...');
+    if (!process.env.SEED_USER_PASSWORD || !process.env.ADMIN_SEED_PASSWORD) {
+        console.warn(
+            '⚠ SEED_USER_PASSWORD / ADMIN_SEED_PASSWORD belum di-set di .env — ' +
+            'akun seed memakai password default yang lemah. Ganti segera.'
+        );
+    }
 
     // 1. Seed Labs
     const lab04 = await prisma.lab.upsert({
@@ -39,7 +51,7 @@ async function main() {
             email: 'afif.zainullah@sucofindo.com',
             name: 'Afif Iskayana Zainullah', // From example doc [cite: 4]
             role: 'TECHNICIAN',
-            password_hash: await bcrypt.hash('sucofindo123', 10),
+            password_hash: await bcrypt.hash(SEED_USER_PASSWORD, 10),
         },
     });
 
@@ -51,7 +63,20 @@ async function main() {
             email: 'ahmad.fasya@sucofindo.com',
             name: 'Ahmad Fasya', // From example doc [cite: 4]
             role: 'ENGINEER',
-            password_hash: await bcrypt.hash('sucofindo123', 10),
+            password_hash: await bcrypt.hash(SEED_USER_PASSWORD, 10),
+        },
+    });
+
+    // Bootstrap admin — registration is ADMIN-only, so one admin must exist.
+    // Password comes from ADMIN_SEED_PASSWORD env var; CHANGE IT after first login.
+    const adminUser = await prisma.user.upsert({
+        where: { email: 'admin@sucofindo.com' },
+        update: {},
+        create: {
+            email: 'admin@sucofindo.com',
+            name: 'Administrator',
+            role: 'ADMIN',
+            password_hash: await bcrypt.hash(ADMIN_SEED_PASSWORD, 10),
         },
     });
 
@@ -127,7 +152,6 @@ async function main() {
             status: 'APPROVED',
             testing_type: 'FULL',
             data: ledStandard.template_data,
-            submitted_at: new Date('2025-10-05T10:00:00Z'),
             approved_at: new Date('2025-10-06T14:30:00Z'),
         },
     });

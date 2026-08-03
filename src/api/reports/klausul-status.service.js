@@ -1,4 +1,5 @@
 const prisma = require('../../lib/prisma');
+const { notifyUsers, getEngineerIds } = require('../notifications/notifications.service');
 
 /**
  * Get all KlausulStatus rows for a report.
@@ -97,6 +98,48 @@ async function submitKlausuls({ reportId, klausulCodes, userId, userRole }) {
             comment: `Submitted klausuls: ${klausulCodes.join(', ')}`,
         },
     });
+
+    // Notify engineers there is work to review (fire-and-forget — a
+    // notification failure must never fail the submit itself).
+    (async () => {
+        const [engineerIds, reportInfo, submitter] = await Promise.all([
+            getEngineerIds(),
+            prisma.report.findUnique({
+                where: { id: reportId },
+                select: {
+                    sampleId: true,
+                    sample: { select: { name: true, brand: true, model: true } },
+                },
+            }),
+            prisma.user.findUnique({ where: { id: userId }, select: { name: true } }),
+        ]);
+        const s = reportInfo?.sample;
+        await notifyUsers(engineerIds, {
+            type: 'KLAUSUL_SUBMITTED',
+            title: `${submitter?.name || 'Teknisi'} submit klausul ${klausulCodes.join(', ')}`,
+            body: s ? `${s.name} — ${s.brand} ${s.model}` : null,
+            // ReportEditor route param is the SAMPLE id
+            link: `/reports/${reportInfo?.sampleId ?? reportId}`,
+        });
+    })().catch((e) => console.error('notify submit failed:', e.message));
+
+    // Tanggal pengujian selesai = the moment the LAST klausul is submitted
+    // (every klausul is now SUBMITTED or APPROVED). Set once; a later
+    // re-submission after rejection does not move the finish date back.
+    if (!report.test_finished_at) {
+        const statusByCode = {};
+        (report.KlausulStatuses || []).forEach(s => { statusByCode[s.klausulCode] = s.status; });
+        klausulCodes.forEach(c => { statusByCode[c] = 'SUBMITTED'; });
+        const allDone = [...validCodes].every(c =>
+            statusByCode[c] === 'SUBMITTED' || statusByCode[c] === 'APPROVED'
+        );
+        if (allDone) {
+            await prisma.report.update({
+                where: { id: reportId },
+                data: { test_finished_at: now },
+            });
+        }
+    }
 
     // Update report-level status
     await updateReportStatus(reportId);
@@ -205,6 +248,30 @@ async function approveKlausuls({ reportId, klausuls, engineerId }) {
                 : `Approved klausuls: ${klausulCodes.join(', ')}`,
         },
     });
+
+    // Notify the technician who owns this report (fire-and-forget)
+    (async () => {
+        const [reportInfo, engineer] = await Promise.all([
+            prisma.report.findUnique({
+                where: { id: reportId },
+                select: {
+                    technicianId: true,
+                    sampleId: true,
+                    sample: { select: { name: true, brand: true, model: true } },
+                },
+            }),
+            prisma.user.findUnique({ where: { id: engineerId }, select: { name: true } }),
+        ]);
+        if (!reportInfo?.technicianId) return;
+        const s = reportInfo.sample;
+        const hasCorrections = klausuls.some(k => k.corrections || k.updatedData);
+        await notifyUsers([reportInfo.technicianId], {
+            type: hasCorrections ? 'KLAUSUL_CORRECTED' : 'KLAUSUL_APPROVED',
+            title: `${engineer?.name || 'Engineer'} ${hasCorrections ? 'menyetujui dengan koreksi' : 'menyetujui'} klausul ${klausulCodes.join(', ')}`,
+            body: s ? `${s.name} — ${s.brand} ${s.model}` : null,
+            link: `/reports/${reportInfo.sampleId}`,
+        });
+    })().catch((e) => console.error('notify approve failed:', e.message));
 
     // Update report-level status (may lock the report if all approved)
     await updateReportStatus(reportId);

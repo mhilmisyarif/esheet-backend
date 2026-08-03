@@ -3,6 +3,7 @@ const klausulService = require('./klausul-status.service');
 const { isKlausulComplete } = require('../../services/report.validator');
 const { generateDraftDocx } = require('../../services/draft.generator');
 const { generateDatasheetPdf } = require('../../services/datasheet.generator');
+const { getResolvedTablesForReport } = require('../../services/tableRender');
 
 // ── Standard report CRUD (unchanged) ─────────────────────────────────────────
 
@@ -53,6 +54,18 @@ exports.updateReportData = async (req, res, next) => {
             userRole: req.user.role,
         });
         res.json({ message: 'Saved.' });
+    } catch (e) { next(e); }
+};
+
+// GET /api/reports/:reportId/decision-history?klausul=5
+// Append-only audit trail of keputusan / hasil_catatan changes.
+exports.getDecisionHistory = async (req, res, next) => {
+    try {
+        const history = await service.getDecisionHistory({
+            reportId: parseInt(req.params.reportId, 10),
+            klausulCode: req.query.klausul || null,
+        });
+        res.json(history);
     } catch (e) { next(e); }
 };
 
@@ -213,7 +226,9 @@ exports.downloadDatasheet = async (req, res, next) => {
             });
         }
 
-        const { buffer, password } = await generateDatasheetPdf(report, klausulStatuses);
+        // Resolved appendix tables (System A) grouped by sub-clause code
+        const resolvedTables = await getResolvedTablesForReport(report.id);
+        const { buffer, password } = await generateDatasheetPdf(report, klausulStatuses, resolvedTables);
 
         const filename = `DATASHEET-${report.sample.model}-${report.id}.pdf`;
 

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const controller = require('./reports.controller');
 const { protect, authorize } = require('../../middleware/auth.middleware');
+const { validate, v } = require('../../middleware/validation.middleware');
 
 // Nested routers
 const clauseTablesNestedRouter = require('../clause-tables/clause-tables-nested.routes');
@@ -15,10 +16,18 @@ router.use('/:reportId/table-templates', tableTemplatesReportRouter);
 // ── Technician routes ─────────────────────────────────────────────────────────
 router.post('/',
     protect, authorize('TECHNICIAN', 'ADMIN'),
+    validate({
+        sampleId: v.int({ required: true, min: 1 }),
+        testingType: v.string({ enum: ['FULL', 'VERIFICATION'] }),
+        selectedClauses: v.array({ of: v.string({ required: true, max: 20 }) }),
+    }),
     controller.createReport);
 
+// Engineers also PATCH here when correcting keputusan/catatan during review
+// (ownership rules are enforced in the service layer).
 router.patch('/:reportId/data',
-    protect, authorize('TECHNICIAN', 'ADMIN'),
+    protect, authorize('TECHNICIAN', 'ENGINEER', 'ADMIN'),
+    validate({ data: v.klausulTree({ required: true }) }),
     controller.updateReportData);
 
 // NEW: Technician submits specific klausuls (partial or full)
@@ -42,6 +51,8 @@ router.patch('/:reportId/doc-metadata',
 router.get('/by-sample/:sampleId', protect, controller.getReportBySampleId);
 router.get('/:reportId', protect, controller.getReport);
 router.get('/:reportId/klausul-statuses', protect, controller.getKlausulStatuses);
+// Audit trail of keputusan/catatan changes (?klausul=5 to filter)
+router.get('/:reportId/decision-history', protect, controller.getDecisionHistory);
 
 // ── Downloads — role-gated ────────────────────────────────────────────────────
 // Draft → Engineer + Drafter (any stage, does not require full approval)

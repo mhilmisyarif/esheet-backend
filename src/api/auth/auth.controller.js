@@ -1,15 +1,18 @@
 const { registerUser, loginUser, getUserById } = require('./auth.service');
 
-// POST /api/auth/register
+// POST /api/auth/register (ADMIN-only, see auth.routes.js)
 exports.register = async (req, res, next) => {
-    const { email, password, name } = req.body;
+    const { email, password, name, role } = req.body;
 
     if (!email || !password || !name) {
         return res.status(400).json({ error: 'Email, password, and name are required.' });
     }
+    if (typeof password !== 'string' || password.length < 8) {
+        return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
 
     try {
-        const user = await registerUser({ email, password, name });
+        const user = await registerUser({ email, password, name, role });
         res.status(201).json(user);
     } catch (e) {
         if (e.code === 'P2002') {

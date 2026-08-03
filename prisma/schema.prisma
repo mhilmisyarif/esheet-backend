@@ -14,7 +14,8 @@ datasource db {
 enum UserRole {
   TECHNICIAN
   ENGINEER
-  DRAFTER        // NEW — view + download Draft + fill document metadata
+  DRAFTER        // view + download Draft + fill document metadata
+  ADMIN          // user management + full access (routes already reference it)
 }
 
 model User {
@@ -32,6 +33,26 @@ model User {
   KlausulsApproved   KlausulStatus[] @relation("KlausulApprover")
 
   HistoryLogs         ReportHistory[]
+  DecisionChanges     DecisionHistory[]
+  Notifications       Notification[]
+}
+
+// In-app notifications: technician submits → engineers notified;
+// engineer approves/corrects → the report's technician notified.
+model Notification {
+  id        Int      @id @default(autoincrement())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    Int
+
+  type      String   // KLAUSUL_SUBMITTED | KLAUSUL_APPROVED | KLAUSUL_CORRECTED
+  title     String
+  body      String?
+  link      String?  // frontend route, e.g. "/reports/123"
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
 }
 
 // --- LABS & STANDARDS (Q2) ---
@@ -50,6 +71,7 @@ model TestStandard {
   name          String @unique // e.g., "Lampu LED Swa-Balast"
 
   standard_numbers String[]  // e.g. "SNI IEC 62560:2015"
+  form_code       String?  // Document-control form no. shown on the datasheet footer, e.g. "FOR-LAB-CHY-09"
   updatedAt       DateTime @default(now()) @updatedAt // Automatically tracks last edit
 
   lab           Lab    @relation(fields: [labId], references: [id])
@@ -89,6 +111,8 @@ model Sample {
   brand  String
   model  String
 
+  received_date   DateTime? // Tanggal masuk/terima sampel (diisi saat registrasi)
+
   factory         String? // Manufacturer name
   factory_address String? // Manufacturer address
   country_origin  String? // Country of manufacture
@@ -96,6 +120,8 @@ model Sample {
   // Relations
   Report     Report?     // A sample has one report
   Components  Component[] // Tested components recorded for this sample
+
+  @@index([orderId])
 }
 
 // Components tested as part of a sample (shown on the Datasheet Detail page)
@@ -153,13 +179,43 @@ model Report {
   doc_location     String?       @default("Laboratorium PT. SUCOFINDO")
   doc_notes        String?
   approved_at      DateTime?     // set when ALL klausuls are approved
+  // Tanggal pengujian — computed automatically from filling activity:
+  // started = first saved change; finished = last klausul submitted.
+  test_started_at  DateTime?
+  test_finished_at DateTime?
   createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @default(now()) @updatedAt // last edit — dashboard sort key
 
   ReportHistory    ReportHistory[]
   ReportImages     ReportImage[]
   TableInstances   TableInstance[]
   KlausulStatuses  KlausulStatus[]
   ClauseTables     ClauseTable[]
+  DecisionHistories DecisionHistory[]
+}
+
+// Append-only audit trail of every keputusan / hasil_catatan change,
+// computed server-side by diffing old vs new report.data on each save.
+model DecisionHistory {
+  id          Int      @id @default(autoincrement())
+  report      Report   @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  reportId    Int
+
+  klausulCode String   // e.g. "5"
+  subKode     String   // e.g. "5.1"
+  butirKode   String?  // e.g. "a" — null when the change is on the sub-klausul itself
+
+  field       String   // "keputusan" | "hasil_catatan"
+  old_value   String?
+  new_value   String?
+
+  actor       User     @relation(fields: [actorId], references: [id])
+  actorId     Int
+
+  timestamp   DateTime @default(now())
+
+  @@index([reportId])
+  @@index([reportId, klausulCode])
 }
 
 
@@ -201,6 +257,8 @@ model ReportImage {
   category  String   @default("SAMPLE") // "SAMPLE" gallery or "COMPONENT" gallery
 
   createdAt DateTime @default(now())
+
+  @@index([reportId])
 }
 
 model ClauseTable {
@@ -342,13 +400,15 @@ model ReportHistory {
   id        Int      @id @default(autoincrement())
   report    Report   @relation(fields: [reportId], references: [id])
   reportId  Int
-  
+
   actor     User     @relation(fields: [actorId], references: [id])
   actorId   Int
-  
+
   action    String   // e.g., "SUBMITTED", "REJECTED", "EDITED"
   comment   String?  // Reason for rejection, or notes
-  
+
   timestamp DateTime @default(now())
+
+  @@index([reportId])
 }
 

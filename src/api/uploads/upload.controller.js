@@ -1,13 +1,17 @@
-const { PrismaClient } = require('@prisma/client');
 const fs = require('fs'); // Node.js File System module
 const path = require('path');
-const prisma = new PrismaClient();
+const prisma = require('../../lib/prisma');
 
-exports.uploadReportImage = async (req, res) => {
-    const { reportId } = req.params;
+const UPLOAD_DIR = path.join(process.cwd(), 'uploads');
+
+exports.uploadReportImage = async (req, res, next) => {
+    const reportId = parseInt(req.params.reportId, 10);
 
     if (!req.file) {
         return res.status(400).json({ error: 'No file uploaded.' });
+    }
+    if (!Number.isInteger(reportId)) {
+        return res.status(400).json({ error: 'Invalid reportId.' });
     }
 
     try {
@@ -20,7 +24,7 @@ exports.uploadReportImage = async (req, res) => {
 
         const image = await prisma.reportImage.create({
             data: {
-                reportId: parseInt(reportId),
+                reportId,
                 url: imageUrl,
                 caption: (req.body.caption || '').toString(),
                 category,
@@ -29,40 +33,41 @@ exports.uploadReportImage = async (req, res) => {
 
         res.status(201).json(image);
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Failed to save image record.' });
+        next(e);
     }
 };
 
-exports.deleteReportImage = async (req, res) => {
-    const { imageId } = req.params;
+exports.deleteReportImage = async (req, res, next) => {
+    const imageId = parseInt(req.params.imageId, 10);
+
+    if (!Number.isInteger(imageId)) {
+        return res.status(400).json({ error: 'Invalid imageId.' });
+    }
 
     try {
         // 1. Find the image in the DB
         const image = await prisma.reportImage.findUnique({
-            where: { id: parseInt(imageId) }
+            where: { id: imageId }
         });
 
         if (!image) {
             return res.status(404).json({ error: 'Image not found' });
         }
 
-        // 2. Delete the file from the server
-        // (This constructs the absolute path to the file)
-        const filePath = path.join(__dirname, '..', '..', '..', image.url);
-
-        if (fs.existsSync(filePath)) {
+        // 2. Delete the file — resolve against the uploads dir and verify the
+        //    result stays inside it (guards against a tampered url in the DB).
+        const filePath = path.resolve(UPLOAD_DIR, path.basename(image.url));
+        if (filePath.startsWith(UPLOAD_DIR) && fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);
         }
 
         // 3. Delete the record from the DB
         await prisma.reportImage.delete({
-            where: { id: parseInt(imageId) }
+            where: { id: imageId }
         });
 
         res.json({ message: 'Image deleted successfully' });
     } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: 'Failed to delete image.' });
+        next(e);
     }
 };

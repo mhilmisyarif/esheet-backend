@@ -7,6 +7,8 @@ const reportsRouter = require('./reports/reports.routes');
 const samplesRouter = require('./samples/samples.routes');
 const workflowRouter = require('./workflow/workflow.routes');
 const authRouter = require('./auth/auth.routes');
+const usersRouter = require('./users/users.routes');
+const notificationsRouter = require('./notifications/notifications.routes');
 const uploadRouter = require('./uploads/upload.routes');
 const standardsRouter = require('./standards/standards.routes');
 const clauseTablesRouter = require('./clause-tables/clause-tables.routes');
@@ -20,6 +22,8 @@ router.use('/reports', reportsRouter);
 router.use('/samples', samplesRouter);
 router.use('/workflow', workflowRouter);
 router.use('/auth', authRouter);
+router.use('/users', usersRouter);
+router.use('/notifications', notificationsRouter);
 router.use('/uploads', uploadRouter);
 router.use('/standards', standardsRouter);
 

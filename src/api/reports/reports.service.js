@@ -17,6 +17,11 @@ async function createReport({ sampleId, technicianId, testingType, selectedClaus
     }
 
     const fullTemplate = sample.testStandard.template_data;
+    if (!Array.isArray(fullTemplate)) {
+        const err = new Error(`Template standar "${sample.testStandard.name}" rusak (bukan array klausul).`);
+        err.statusCode = 422;
+        throw err;
+    }
     let reportData;
 
     if (testingType === 'VERIFICATION') {
@@ -67,10 +72,24 @@ async function getReportBySampleId(sampleId) {
     });
 }
 
+const { diffReportData } = require('./report-diff');
+
 /**
  * Updates the JSON data payload of a report.
- * Only allowed if report is not APPROVED.
- * Only the assigned technician (or ADMIN) may call this.
+ *
+ * Allowed roles:
+ *   - TECHNICIAN — only on their own report (fills butir keputusan & catatan)
+ *   - ENGINEER   — on any report (reviews & corrects keputusan; the
+ *                  frontend tags corrections with original_keputusan /
+ *                  is_corrected / corrected_by inside the JSON, which
+ *                  is preserved here so it shows up across the app and
+ *                  in the generated datasheet & draft documents)
+ *   - ADMIN      — on any report
+ *
+ * Rejected if the report is APPROVED (locked).
+ *
+ * Every keputusan / hasil_catatan change is diffed server-side and written
+ * to DecisionHistory in the same transaction (append-only audit trail).
  */
 async function updateReportData({ reportId, data, userId, userRole }) {
     const report = await prisma.report.findUnique({ where: { id: reportId } });
@@ -87,16 +106,59 @@ async function updateReportData({ reportId, data, userId, userRole }) {
         throw err;
     }
 
-    // Ownership check — only the assigned technician or an ADMIN may edit
-    if (report.technicianId !== userId && userRole !== 'ADMIN') {
+    const editableRoles = ['TECHNICIAN', 'ENGINEER', 'ADMIN'];
+    if (!editableRoles.includes(userRole)) {
+        const err = new Error('Forbidden: your role cannot edit reports.');
+        err.statusCode = 403;
+        throw err;
+    }
+    // Technicians may only edit reports they own; engineers/admins can edit any.
+    if (userRole === 'TECHNICIAN' && report.technicianId !== userId) {
         const err = new Error('Forbidden: This is not your report.');
         err.statusCode = 403;
         throw err;
     }
 
-    return prisma.report.update({
-        where: { id: reportId },
-        data: { data },
+    const changes = diffReportData(report.data, data);
+
+    // Tanggal pengujian dimulai = the first time actual test values are
+    // saved on this report (not report creation, which is just registration).
+    const startTestClock =
+        changes.length > 0 && !report.test_started_at
+            ? { test_started_at: new Date() }
+            : {};
+
+    const ops = [
+        prisma.report.update({
+            where: { id: reportId },
+            data: { data, ...startTestClock },
+        }),
+    ];
+    if (changes.length > 0) {
+        ops.push(
+            prisma.decisionHistory.createMany({
+                data: changes.map((c) => ({ ...c, reportId, actorId: userId })),
+            }),
+        );
+    }
+    const [updated] = await prisma.$transaction(ops);
+    return updated;
+}
+
+/**
+ * Fetches the decision-change audit trail for a report, newest first.
+ * Optionally filtered to one klausul.
+ */
+async function getDecisionHistory({ reportId, klausulCode }) {
+    return prisma.decisionHistory.findMany({
+        where: {
+            reportId,
+            ...(klausulCode ? { klausulCode } : {}),
+        },
+        include: {
+            actor: { select: { id: true, name: true, role: true } },
+        },
+        orderBy: { timestamp: 'desc' },
     });
 }
 
@@ -235,6 +297,7 @@ module.exports = {
     getReportById,
     getReportBySampleId,
     updateReportData,
+    getDecisionHistory,
     submitReport,
     approveReport,
     rejectReport,

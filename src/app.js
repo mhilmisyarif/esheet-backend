@@ -24,11 +24,30 @@ app.use(cors({
         return callback(new Error('Not allowed by CORS'));
     },
 }));
-app.use(express.json());
+
+// Security headers ("helmet-lite" — dependency-free; can be swapped for
+// helmet() any time, its behaviour is a superset of these headers).
+app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.removeHeader('X-Powered-By');
+    next();
+});
+
+// JSON body cap — klausul trees are large but bounded in practice
+app.use(express.json({ limit: '5mb' }));
 
 // --- Serve uploaded images statically ---
 // Files in /uploads are accessible at http://localhost:5000/uploads/<filename>
-app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
+// Security headers: nosniff stops MIME-type guessing; the CSP blocks any
+// script/style execution if a non-image file ever ends up in the folder.
+app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
+    setHeaders(res) {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+    },
+}));
 
 // --- API routes ---
 app.use('/api', apiRouter);

@@ -15,8 +15,7 @@ const Docxtemplater = require('docxtemplater');
 const ImageModule = require('docxtemplater-image-module-free');
 const fs = require('fs');
 const path = require('path');
-const { getClauseTablesGrouped } = require('../api/clause-tables/clause-tables.service');
-const { getInstancesGrouped } = require('../api/table-instances/table-instances.service');
+const { getResolvedTablesForReport } = require('./tableRender');
 
 const {
     Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun,
@@ -34,63 +33,92 @@ const BORDER = { style: BorderStyle.SINGLE, size: 4, color: '000000' };
 const BORDERS = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER };
 const MARGINS = { top: 60, bottom: 60, left: 100, right: 100 };
 
-function buildWordTable(clauseTable) {
-    const { title, headers, rows, notes } = clauseTable;
-    const totalWidth = 9026;
-    const colCount = headers.length || 1;
-    const colWidth = Math.floor(totalWidth / colCount);
-    const columnWidths = headers.map((_, i) =>
-        i === headers.length - 1 ? totalWidth - colWidth * (headers.length - 1) : colWidth
-    );
+const TOTAL_W = 9026;
+const RESULT_COLOR = (v) => (v === 'L' ? '007A00' : v === 'G' ? 'B40000' : '505050');
 
-    const headerRow = new TableRow({
-        tableHeader: true,
-        children: headers.map((h, i) => new TableCell({
-            borders: BORDERS, margins: MARGINS,
-            width: { size: columnWidths[i], type: WidthType.DXA },
-            shading: { fill: 'D9D9D9', type: ShadingType.CLEAR },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({ text: h, bold: true, size: 18, font: 'Arial' })],
-            })],
-        })),
+function txtCell(text, { bold = false, shade = null, color = '000000', align = AlignmentType.CENTER, width } = {}) {
+    return new TableCell({
+        borders: BORDERS, margins: MARGINS,
+        ...(width ? { width: { size: width, type: WidthType.DXA } } : {}),
+        ...(shade ? { shading: { fill: shade, type: ShadingType.CLEAR } } : {}),
+        verticalAlign: VerticalAlign.CENTER,
+        children: [new Paragraph({
+            alignment: align,
+            children: [new TextRun({ text: String(text ?? ''), bold, color, size: 18, font: 'Arial' })],
+        })],
     });
+}
 
-    const dataRows = (rows || []).map(row => new TableRow({
-        children: headers.map((_, i) => new TableCell({
-            borders: BORDERS, margins: MARGINS,
-            width: { size: columnWidths[i], type: WidthType.DXA },
-            verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({
-                alignment: AlignmentType.CENTER,
-                children: [new TextRun({
-                    text: String(Array.isArray(row) ? (row[i] ?? '') : ''),
-                    size: 18, font: 'Arial',
-                })],
-            })],
-        })),
-    }));
-
+// Build docx elements for one resolved System-A table (key_value + table
+// sections with computed/result cells already filled by resolveInstance).
+function buildTemplateWordTable(tbl) {
     const elements = [];
-    if (title) {
+    if (tbl.title) {
         elements.push(new Paragraph({
-            children: [new TextRun({ text: title, bold: true, size: 20, font: 'Arial' })],
+            children: [new TextRun({ text: tbl.title, bold: true, size: 20, font: 'Arial' })],
             spacing: { before: 120, after: 60 },
         }));
     }
-    elements.push(new Table({ width: { size: totalWidth, type: WidthType.DXA }, columnWidths, rows: [headerRow, ...dataRows] }));
-    if (notes?.trim()) {
-        elements.push(new Paragraph({
-            children: [new TextRun({ text: `Catatan: ${notes}`, italics: true, size: 18, font: 'Arial' })],
-            spacing: { before: 60, after: 120 },
-        }));
-    }
+
+    tbl.resolved.sections.forEach((section) => {
+        if (section.label) {
+            elements.push(new Paragraph({
+                children: [new TextRun({ text: section.label, bold: true, size: 18, font: 'Arial' })],
+                spacing: { before: 100, after: 40 },
+            }));
+        }
+
+        if (section.type === 'key_value') {
+            const hasResult = section.rows.some((r) => r.result);
+            const lw = Math.floor(TOTAL_W * (hasResult ? 0.52 : 0.5));
+            const vw = Math.floor(TOTAL_W * (hasResult ? 0.34 : 0.5));
+            const rw = TOTAL_W - lw - vw;
+            const rows = section.rows.map((r) => new TableRow({
+                children: [
+                    txtCell(r.label, { shade: 'F2F2F2', align: AlignmentType.LEFT, width: lw }),
+                    txtCell(r.value || '-', { align: AlignmentType.LEFT, width: vw }),
+                    ...(hasResult ? [txtCell(r.result || '-', { bold: true, color: RESULT_COLOR(r.result), width: rw })] : []),
+                ],
+            }));
+            const columnWidths = hasResult ? [lw, vw, rw] : [lw, vw];
+            elements.push(new Table({ width: { size: TOTAL_W, type: WidthType.DXA }, columnWidths, rows }));
+        } else if (section.type === 'table') {
+            const cols = section.columns;
+            const totalHint = cols.reduce((s, c) => s + (c.width || 0), 0);
+            const columnWidths = cols.map((c) =>
+                totalHint > 0 && c.width ? Math.floor((c.width / totalHint) * TOTAL_W) : Math.floor(TOTAL_W / cols.length),
+            );
+            columnWidths[columnWidths.length - 1] = TOTAL_W - columnWidths.slice(0, -1).reduce((s, w) => s + w, 0);
+
+            const headerRow = new TableRow({
+                tableHeader: true,
+                children: cols.map((c, i) => txtCell(c.header || '', { bold: true, shade: 'D9D9D9', width: columnWidths[i] })),
+            });
+            const dataRows = section.rows.map((row) => new TableRow({
+                children: cols.map((c, i) => {
+                    const val = row.cells[c.id];
+                    return c.isResult
+                        ? txtCell(val || '-', { bold: true, color: RESULT_COLOR(val), width: columnWidths[i] })
+                        : txtCell(val ?? '', { width: columnWidths[i] });
+                }),
+            }));
+            elements.push(new Table({ width: { size: TOTAL_W, type: WidthType.DXA }, columnWidths, rows: [headerRow, ...dataRows] }));
+
+            if (section.footnote) {
+                elements.push(new Paragraph({
+                    children: [new TextRun({ text: section.footnote, italics: true, size: 16, font: 'Arial' })],
+                    spacing: { before: 40, after: 80 },
+                }));
+            }
+        }
+    });
+
     elements.push(new Paragraph({ children: [] }));
     return elements;
 }
 
-function buildAppendix(groupedTables, reportData) {
+// Appendix from resolved tables keyed by sub-clause code.
+function buildAppendix(resolvedTables, reportData) {
     const titleMap = {};
     (reportData || []).forEach(k => {
         titleMap[k.klausul] = k.judul || '';
@@ -103,15 +131,18 @@ function buildAppendix(groupedTables, reportData) {
         spacing: { after: 240 },
     })];
 
-    Object.entries(groupedTables).forEach(([clauseCode, tables]) => {
-        const clauseTitle = titleMap[clauseCode]
-            ? `Klausul ${clauseCode} — ${titleMap[clauseCode]}`
-            : `Klausul ${clauseCode}`;
+    Object.entries(resolvedTables).forEach(([subCode, tables]) => {
+        const heading = titleMap[subCode]
+            ? `Klausul ${subCode} — ${titleMap[subCode]}`
+            : `Klausul ${subCode}`;
         elements.push(new Paragraph({
-            children: [new TextRun({ text: clauseTitle, bold: true, size: 20, font: 'Arial' })],
+            children: [new TextRun({ text: heading, bold: true, size: 20, font: 'Arial' })],
             spacing: { before: 200, after: 80 },
         }));
-        tables.forEach(t => buildWordTable(t).forEach(el => elements.push(el)));
+        tables
+            .slice()
+            .sort((a, b) => a.order - b.order)
+            .forEach(t => buildTemplateWordTable(t).forEach(el => elements.push(el)));
     });
     return elements;
 }
@@ -120,23 +151,8 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
     const { sample, technician, engineer, ReportImages } = report;
     const { order } = sample;
 
-    const groupedTables = await getClauseTablesGrouped(report.id);
-
-    // Build clause result map
-    const clauseResultMap = {};
-    (report.data || []).forEach(k => {
-        const decisions = [];
-        (k.sub_klausul || []).forEach(s => (s.butir || []).forEach(b => decisions.push(b.keputusan)));
-        if (decisions.includes('G')) clauseResultMap[k.klausul] = 'G';
-        else if (decisions.every(d => d === 'TB')) clauseResultMap[k.klausul] = 'TB';
-        else clauseResultMap[k.klausul] = 'L';
-    });
-
-    // Filter tables: only include for L clauses
-    const tablesForAppendix = {};
-    Object.entries(groupedTables).forEach(([code, tables]) => {
-        if (clauseResultMap[code] === 'L') tablesForAppendix[code] = tables;
-    });
+    // Resolved System-A appendix tables, grouped by sub-clause code.
+    const tablesForAppendix = await getResolvedTablesForReport(report.id);
 
     // Build details + summary — now with per-klausul approval status
     const details = [];

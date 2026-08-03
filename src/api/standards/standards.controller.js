@@ -1,9 +1,8 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../../lib/prisma');
 
 // POST /api/standards
 exports.createStandard = async (req, res) => {
-    const { name, labId, template_data, standard_numbers } = req.body; // <--- ADD THIS
+    const { name, labId, template_data, standard_numbers, form_code } = req.body;
 
     if (!name || !labId || !template_data) {
         return res.status(400).json({ error: "Name, Lab ID, and Template JSON are required." });
@@ -14,8 +13,8 @@ exports.createStandard = async (req, res) => {
             data: {
                 name,
                 labId: parseInt(labId),
-                // Add standard_number to data
-                standard_numbers: Array.isArray(standard_numbers) ? standard_numbers : [],// <--- ADD THIS
+                standard_numbers: Array.isArray(standard_numbers) ? standard_numbers : [],
+                form_code: form_code || null,
                 template_data: typeof template_data === 'string' ? JSON.parse(template_data) : template_data
             }
         });
@@ -57,7 +56,7 @@ exports.getStandard = async (req, res) => {
 // PUT /api/standards/:id
 exports.updateStandard = async (req, res) => {
     const { id } = req.params;
-    const { name, labId, template_data, standard_numbers } = req.body;
+    const { name, labId, template_data, standard_numbers, form_code } = req.body;
 
     try {
         const updated = await prisma.testStandard.update({
@@ -66,6 +65,7 @@ exports.updateStandard = async (req, res) => {
                 name,
                 labId: parseInt(labId),
                 standard_numbers: Array.isArray(standard_numbers) ? standard_numbers : [],
+                form_code: form_code || null,
                 template_data: typeof template_data === 'string' ? JSON.parse(template_data) : template_data
             }
         });

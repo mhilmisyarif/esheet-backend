@@ -3,17 +3,31 @@ const {
     getSampleById,
     updateSample,
     deleteSample,
+    lookupByCode,
 } = require('./samples.service');
 
-// GET /api/samples?status=REVIEW
+// GET /api/samples/lookup?code=CBT/3801/... — barcode scan resolver
+exports.lookupByCode = async (req, res, next) => {
+    try {
+        const samples = await lookupByCode(req.query.code);
+        res.json({ items: samples });
+    } catch (e) {
+        next(e);
+    }
+};
+
+// GET /api/samples?status=REVIEW&page=1&limit=50
+// Responds { items, total, page, limit }
 exports.getAllSamples = async (req, res, next) => {
     try {
-        const samples = await getAllSamples({
+        const result = await getAllSamples({
             status: req.query.status,
             userId: req.user.id,
             userRole: req.user.role,
+            page: req.query.page,
+            limit: req.query.limit,
         });
-        res.json(samples);
+        res.json(result);
     } catch (e) {
         next(e);
     }

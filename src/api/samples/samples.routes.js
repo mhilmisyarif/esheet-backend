@@ -7,6 +7,10 @@ const { protect } = require('../../middleware/auth.middleware');
 // GET /api/samples — was unprotected before, now requires login
 router.get('/', protect, controller.getAllSamples);
 
+// GET /api/samples/lookup?code=... — barcode scan resolver.
+// MUST be registered before /:id so "lookup" isn't parsed as an id.
+router.get('/lookup', protect, controller.lookupByCode);
+
 // GET /api/samples/:id — full detail (Datasheet Detail page)
 router.get('/:id', protect, controller.getSampleById);
 
