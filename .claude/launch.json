@@ -1,0 +1,16 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "esheet-frontend",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "D:\\src\\sbu-project\\esheet-frontend\\node_modules\\vite\\bin\\vite.js",
+        "D:\\src\\sbu-project\\esheet-frontend",
+        "--port",
+        "5173"
+      ],
+      "port": 5173
+    }
+  ]
+}

@@ -1,18 +1,31 @@
-const { PrismaClient } = require('@prisma/client');
+const prisma = require('../../lib/prisma');
 const { parseLabCodeFromOrder } = require('../../utils/order.parser');
-const prisma = new PrismaClient();
 
 exports.createFullReportWorkflow = async (req, res) => {
     const {
         order_no,
         applicant,
+        applicant_address,
         iwo_no,
         testStandardId,
         brand,
         model,
+        factory,
+        factory_address,
+        country_origin,
+        received_date, // tanggal masuk sampel (ISO date string)
         testingType, // "FULL" or "VERIFICATION"
         selectedClauses, // ["5", "7"]
     } = req.body;
+
+    // Validate received_date when provided
+    let receivedDate = null;
+    if (received_date) {
+        receivedDate = new Date(received_date);
+        if (isNaN(receivedDate.getTime())) {
+            return res.status(400).json({ error: 'received_date bukan tanggal yang valid.' });
+        }
+    }
 
     const technicianId = req.user.id;
 
@@ -36,8 +49,16 @@ exports.createFullReportWorkflow = async (req, res) => {
 
     // 3. Get Report Data (Full or Verification)
     const fullTemplateData = standard.template_data;
+    if (!Array.isArray(fullTemplateData)) {
+        return res.status(422).json({
+            error: `Template standar "${standard.name}" rusak (bukan array klausul) — perbaiki di Manage Standards.`,
+        });
+    }
     let reportData;
     if (testingType === 'VERIFICATION') {
+        if (!Array.isArray(selectedClauses) || selectedClauses.length === 0) {
+            return res.status(400).json({ error: 'selectedClauses wajib diisi untuk pengujian VERIFICATION.' });
+        }
         reportData = fullTemplateData.filter(k => selectedClauses.includes(k.klausul));
     } else {
         reportData = fullTemplateData;
@@ -49,10 +70,11 @@ exports.createFullReportWorkflow = async (req, res) => {
             // a. Create or find the Order
             const order = await tx.order.upsert({
                 where: { order_no: order_no },
-                update: { applicant: applicant },
+                update: { applicant: applicant, address: applicant_address },
                 create: {
                     order_no: order_no,
                     applicant: applicant,
+                    address: applicant_address,
                     labId: lab.id,
                 },
             });
@@ -66,6 +88,10 @@ exports.createFullReportWorkflow = async (req, res) => {
                     name: standard.name, // Use standard's name as sample name
                     brand: brand,
                     model: model,
+                    factory: factory,
+                    factory_address: factory_address,
+                    country_origin: country_origin,
+                    received_date: receivedDate,
                 },
             });
 
