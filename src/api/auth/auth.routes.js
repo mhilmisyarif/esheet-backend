@@ -10,7 +10,7 @@ const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
 
 // Registration is ADMIN-only — this is an internal lab system, not a public
 // signup. The admin chooses the new user's role (validated in the service).
-router.post('/register',
+router.post('/register-user',
     protect, authorize('ADMIN'),
     validate({
         email: v.email({ required: true }),
