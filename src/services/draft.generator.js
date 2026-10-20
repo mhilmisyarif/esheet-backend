@@ -21,6 +21,7 @@ const {
     Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun,
     AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign,
 } = require('docx');
+const { styleText } = require('util');
 
 const formatDate = (date) => {
     if (!date) return '-';
@@ -230,6 +231,8 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         modules: [new ImageModule(imageOpts)],
     });
 
+    const if_not_pass_text = styleText('tidak', { color: 'B40000' });
+
     // Use doc_* metadata if filled by drafter, fall back to order fields
     doc.render({
         applicant: report.doc_applicant || order.applicant || '-',
@@ -256,8 +259,9 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         image_product: productImgPath,
         image_component_product: productImgPath,
         marking_image: markingImgPath,
-        if_not_pass: details.some(d => d.result === 'G' || d.result?.includes('→')) ? 'TIDAK' : '',
+        if_not_pass: details.some(d => d.result === 'G' || d.result?.includes('→')) ? if_not_pass_text : '',
     });
+
 
     const mainBuffer = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
 

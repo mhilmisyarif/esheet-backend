@@ -154,7 +154,7 @@ async function updateSample(id, data) {
             where: { id: existing.orderId },
             data: {
                 applicant: clean(data.applicant),
-                address: clean(data.applicant_address),
+                applicant_address: clean(data.applicant_address),
             },
         }),
         prisma.sample.update({ where: { id }, data: sampleData }),

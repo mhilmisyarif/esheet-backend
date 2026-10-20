@@ -5,7 +5,7 @@ const { parseLabCodeFromOrder } = require('../../utils/order.parser');
  * Creates a new order. The lab is derived from the order_no
  * (e.g. "CBT/3801/20-104-04/000038/01/2026-1" → lab_code "04").
  */
-async function createOrder({ order_no, applicant, address }) {
+async function createOrder({ order_no, applicant, applicant_address }) {
     const labCode = parseLabCodeFromOrder(order_no);
     if (!labCode) {
         const err = new Error('Invalid order_no format — expected segment like "20-104-04".');
@@ -24,7 +24,7 @@ async function createOrder({ order_no, applicant, address }) {
         data: {
             order_no,
             applicant: applicant || null,
-            address: address || null,
+            applicant_address: applicant_address || null,
             labId: lab.id,
         },
     });

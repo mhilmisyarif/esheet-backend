@@ -70,11 +70,11 @@ exports.createFullReportWorkflow = async (req, res) => {
             // a. Create or find the Order
             const order = await tx.order.upsert({
                 where: { order_no: order_no },
-                update: { applicant: applicant, address: applicant_address },
+                update: { applicant: applicant, applicant_address: applicant_address },
                 create: {
                     order_no: order_no,
                     applicant: applicant,
-                    address: applicant_address,
+                    applicant_address: applicant_address,
                     labId: lab.id,
                 },
             });
