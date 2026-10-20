@@ -55,6 +55,17 @@ model Notification {
   @@index([userId, createdAt])
 }
 
+model Technician {
+  id          Int      @id @default(autoincrement())
+  name        String
+  status      String   @default("ACTIVE") // ACTIVE, INACTIVE, ON_LEAVE
+  createdAt   DateTime @default(now()) @map("created_at")
+  lab         Lab     @relation(fields: [labId], references: [id])
+  labId       Int
+
+  @@map("technician")
+}
+
 // --- LABS & STANDARDS (Q2) ---
 model Lab {
   id       Int      @id @default(autoincrement())
@@ -64,6 +75,7 @@ model Lab {
   // Relations
   TestStandards TestStandard[]
   Orders        Order[]
+  Technician   Technician[]
 }
 
 model TestStandard {
@@ -92,7 +104,7 @@ model Order {
   lab       Lab      @relation(fields: [labId], references: [id])
   labId     Int
   applicant String?
-  address   String?
+  applicant_address   String?
   createdAt DateTime @default(now())
 
   // Relations

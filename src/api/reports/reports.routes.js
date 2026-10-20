@@ -60,9 +60,9 @@ router.get('/:reportId/download/draft',
     protect, authorize('ENGINEER', 'DRAFTER', 'ADMIN'),
     controller.downloadDraft);
 
-// Datasheet → Technician only (requires at least one approved klausul)
+// Datasheet → All User (requires at least one approved klausul)
 router.get('/:reportId/download/datasheet',
-    protect, authorize('TECHNICIAN', 'ADMIN'),
+    protect, authorize('ENGINEER', 'TECHNICIAN', 'ADMIN'),
     controller.downloadDatasheet);
 
 // NOTE: Old routes removed:

@@ -15,6 +15,7 @@ const clauseTablesRouter = require('./clause-tables/clause-tables.routes');
 const tableTemplatesRouter = require('./table-templates/table-templates.routes');
 const tableInstancesRouter = require('./table-instances/table-instances.routes');
 const componentsRouter = require('./components/components.routes');
+const technicianRoutes = require('./technician/technician.routes');
 
 router.use('/labs', labsRouter);
 router.use('/orders', ordersRouter);
@@ -26,6 +27,8 @@ router.use('/users', usersRouter);
 router.use('/notifications', notificationsRouter);
 router.use('/uploads', uploadRouter);
 router.use('/standards', standardsRouter);
+router.use('/technicians', technicianRoutes);
+
 
 // /api/clause-tables/:tableId
 router.use('/clause-tables', clauseTablesRouter);

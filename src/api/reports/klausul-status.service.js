@@ -10,7 +10,7 @@ async function getKlausulStatuses(reportId) {
         where: { reportId },
         include: {
             submittedBy: { select: { id: true, name: true } },
-            approvedBy:  { select: { id: true, name: true } },
+            approvedBy: { select: { id: true, name: true } },
         },
     });
     return rows.reduce((acc, row) => {
@@ -349,10 +349,10 @@ async function updateDocMetadata({ reportId, metadata, userId, userRole }) {
         where: { id: reportId },
         data: {
             doc_applicant: metadata.applicant ?? report.doc_applicant,
-            doc_address:   metadata.address   ?? report.doc_address,
-            doc_standard:  metadata.standard  ?? report.doc_standard,
-            doc_location:  metadata.location  ?? report.doc_location,
-            doc_notes:     metadata.notes     ?? report.doc_notes,
+            doc_address: metadata.applicant_address ?? report.doc_address,
+            doc_standard: metadata.standard ?? report.doc_standard,
+            doc_location: metadata.location ?? report.doc_location,
+            doc_notes: metadata.notes ?? report.doc_notes,
         },
     });
 }

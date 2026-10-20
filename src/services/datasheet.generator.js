@@ -168,6 +168,28 @@ function drawTable(doc, x, y, tableW, headers, rows, colWidths) {
     return y;
 }
 
+/**
+ * Resolves the examiner/technician name from available report sources:
+ * 1. Assigned technician object (report.technician.name)
+ * 2. Creating user object (report.User.name)
+ * 3. Clause metadata filled in the editor (klausul.meta.tester_name)
+ */
+function getExaminerName(report, klausuls = []) {
+    if (report.technician?.name) {
+        return report.technician.name;
+    }
+    if (report.User?.name) {
+        return report.User.name;
+    }
+    // Fall back to the first non-empty tester_name from clause editor meta
+    for (const k of klausuls) {
+        if (k.meta?.tester_name && k.meta.tester_name.trim() !== '') {
+            return k.meta.tester_name.trim();
+        }
+    }
+    return '-';
+}
+
 async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}) {
     const { sample, technician } = report;
     const { order } = sample;
@@ -179,8 +201,35 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
     // Pre-generate QR codes
     const qrMap = {};
     for (const k of approvedKlausuls) {
-        const text = `ESHEET|K:${k.klausul}|T:${report.technicianId || 0}|R:${report.id}`;
-        qrMap[k.klausul] = { text, buffer: await generateQR(text) };
+        const kStatus = klausulStatuses[k.klausul];
+        const text = `ESHEET|K:${k.klausul}|R:${report.id}`;
+        // 1. Resolve test conditions & personnel details (infoItems)
+        const tester = k.meta?.tester_name || kStatus?.submittedBy?.name || getExaminerName(report, approvedKlausuls);
+        const approver = kStatus?.approvedBy?.name || '-';
+        const suhu = k.meta?.temperature != null && k.meta.temperature !== ''
+            ? `${k.meta.temperature} °C` : '-';
+        const lembab = k.meta?.humidity != null && k.meta.humidity !== ''
+            ? `${k.meta.humidity} %RH` : '-';
+        const tglUji = formatDateShort(k.meta?.test_datetime || kStatus?.submittedAt);
+        const tglSetuju = formatDateShort(kStatus?.approvedAt);
+
+        // 2. Format human-readable text payload for the QR scanner
+        const qrText = [
+            `[ LEMBAR DATA UJI - KLAUSUL ${k.klausul} ]`,
+            `No. Lab: ${deriveLabNo(order.order_no)}`,
+            `Diuji oleh: ${tester}`,
+            `Disetujui oleh: ${approver}`,
+            `Suhu: ${suhu}`,
+            `Kelembapan: ${lembab}`,
+            `Tgl Uji: ${tglUji}`,
+            `Tgl Disetujui: ${tglSetuju}`
+        ].join('\n');
+
+        // 3. Generate QR code buffer with the infoItems payload
+        qrMap[k.klausul] = {
+            text: `Klausul ${k.klausul} Info`,
+            buffer: await generateQR(qrText)
+        };
     }
 
     const pdfBuffer = await new Promise((resolve, reject) => {
@@ -224,7 +273,7 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
             ['Model', sample.model || '-'],
             ...stdNumbers.map((n, i) => [i === 0 ? 'Standar/Referensi' : '', n]),
             ['Jenis Pengujian', report.testing_type === 'VERIFICATION' ? 'Verifikasi' : 'Penuh'],
-            ['Penguji', technician?.name || '-'],
+            ['Penguji', getExaminerName(report, approvedKlausuls)], // Updated line
             ['Tanggal Terima Sampel', sample.received_date ? formatDate(sample.received_date) : '-'],
             ['Tanggal Pengujian', testDateRange(report, approvedKlausuls)],
         ];
@@ -248,7 +297,7 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
         // returns the new y. Uses the module PDFKit helpers + NOTE_FONT so
         // symbols (Ω ⏚ ½ …) print in cells.
         const resultColor = (v) =>
-            v === 'L' ? '#007A00' : v === 'G' ? '#B40000' : '#505050';
+            v === 'L' ? '#505050' : v === 'G' ? '#B40000' : '#505050';
 
         const drawTemplateTable = (tbl, startY) => {
             let ty = startY;
@@ -257,7 +306,7 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
             // Table title
             if (tbl.title) {
                 ty = checkPage(doc, ty, 20);
-                doc.fillColor('#282828').fontSize(9).font('Helvetica-Bold')
+                doc.fillColor('#282828').fontSize(9).font('Helvetica')
                     .text(tbl.title, 50, ty, { width: pageW, lineBreak: false });
                 ty += 15;
             }
@@ -397,8 +446,10 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
                 ? `${k.meta.temperature} °C (20 ± 5)` : '-';
             const lembab = k.meta?.humidity != null && k.meta.humidity !== ''
                 ? `${k.meta.humidity} %RH (≤ 65)` : '-';
+            // Resolve specific clause tester or fall back to global examiner
+            const clauseTester = k.meta?.tester_name || kStatus?.submittedBy?.name || getExaminerName(report, approvedKlausuls);
             const infoItems = [
-                ['Diuji oleh', kStatus?.submittedBy?.name || technician?.name || '-'],
+                ['Diuji oleh', clauseTester],
                 ['Disetujui oleh', kStatus?.approvedBy?.name || '-'],
                 ['Suhu Ruang', suhu],
                 ['Tanggal Uji', formatDateShort(k.meta?.test_datetime || kStatus?.submittedAt)],
