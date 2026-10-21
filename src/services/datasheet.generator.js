@@ -346,15 +346,9 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
                 } else if (section.type === 'table') {
                     const cols = section.columns;
                     // Column widths: honour width hints proportionally, else equal
-                    const totalHint = cols.reduce((s, c) => s + (c.width || 0), 0);
-                    const colW = cols.map((c) =>
-                        totalHint > 0 && c.width
-                            ? (c.width / totalHint) * pageW
-                            : pageW / cols.length,
-                    );
-                    // normalise to exactly pageW
-                    const sum = colW.reduce((s, w) => s + w, 0);
-                    for (let ci = 0; ci < colW.length; ci++) colW[ci] = (colW[ci] / sum) * pageW;
+                    const weights = cols.map((c) => (typeof c.width === 'number' && c.width > 0 ? c.width : 100));
+                    const totalWeight = weights.reduce((s, w) => s + w, 0);
+                    const colW = weights.map((w) => (w / totalWeight) * pageW);
 
                     // Header
                     ty = checkPage(doc, ty, 20);

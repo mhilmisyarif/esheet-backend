@@ -21,7 +21,6 @@ const {
     Document, Packer, Paragraph, Table, TableRow, TableCell, TextRun,
     AlignmentType, BorderStyle, WidthType, ShadingType, VerticalAlign,
 } = require('docx');
-const { styleText } = require('util');
 
 const formatDate = (date) => {
     if (!date) return '-';
@@ -85,11 +84,11 @@ function buildTemplateWordTable(tbl) {
             elements.push(new Table({ width: { size: TOTAL_W, type: WidthType.DXA }, columnWidths, rows }));
         } else if (section.type === 'table') {
             const cols = section.columns;
-            const totalHint = cols.reduce((s, c) => s + (c.width || 0), 0);
-            const columnWidths = cols.map((c) =>
-                totalHint > 0 && c.width ? Math.floor((c.width / totalHint) * TOTAL_W) : Math.floor(TOTAL_W / cols.length),
-            );
-            columnWidths[columnWidths.length - 1] = TOTAL_W - columnWidths.slice(0, -1).reduce((s, w) => s + w, 0);
+            const weights = cols.map((c) => (typeof c.width === 'number' && c.width > 0 ? c.width : 100));
+            const totalWeight = weights.reduce((s, w) => s + w, 0);
+            const columnWidths = weights.map((w) => Math.floor((w / totalWeight) * TOTAL_W));
+            const currentSum = columnWidths.slice(0, -1).reduce((s, w) => s + w, 0);
+            columnWidths[columnWidths.length - 1] = Math.max(100, TOTAL_W - currentSum);
 
             const headerRow = new TableRow({
                 tableHeader: true,
@@ -175,18 +174,29 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
 
         const subDecisions = [];
         (k.sub_klausul || []).forEach(sub => {
+            // Sub-klausul header row — shows the sub code, title, and its own keputusan
+            details.push({
+                code: sub.kode,
+                text: sub.judul ? sub.judul.toUpperCase() : '',
+                note: sub.hasil_catatan || '-',
+                result: sub.keputusan || '-',
+                is_header: false,
+                is_sub_header: true,
+            });
+            if (sub.keputusan) subDecisions.push(sub.keputusan);
+
             sub.butir.forEach(b => {
                 const isCorrected = b.is_corrected && b.original_keputusan;
 
                 details.push({
                     code: b.kode,
                     text: b.teks,
-                    // Show correction in the note column as plain text
                     note: isCorrected
                         ? `${b.hasil_catatan || ''} [Koreksi: ${b.original_keputusan} → ${b.keputusan}]`.trim()
                         : b.hasil_catatan || '-',
                     result: b.keputusan || '-',
                     is_header: false,
+                    is_sub_header: false,
                 });
 
                 subDecisions.push(b.keputusan);
@@ -194,8 +204,8 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         });
 
         let clauseStatus = 'L';
-        if (subDecisions.includes('G')) clauseStatus = 'G';
-        else if (subDecisions.every(d => d === 'TB')) clauseStatus = 'TB';
+        if (subDecisions.some(d => d === 'G')) clauseStatus = 'G';
+        else if (subDecisions.length > 0 && subDecisions.every(d => d === 'TB')) clauseStatus = 'TB';
 
         summary.push({
             clause: k.klausul,
@@ -231,7 +241,7 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         modules: [new ImageModule(imageOpts)],
     });
 
-    const if_not_pass_text = styleText('tidak', { color: 'B40000' });
+    const if_not_pass_text = 'tidak';
 
     // Use doc_* metadata if filled by drafter, fall back to order fields
     doc.render({
