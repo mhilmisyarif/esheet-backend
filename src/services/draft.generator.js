@@ -34,7 +34,7 @@ const BORDERS = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER };
 const MARGINS = { top: 60, bottom: 60, left: 100, right: 100 };
 
 const TOTAL_W = 9026;
-const RESULT_COLOR = (v) => (v === 'L' ? '007A00' : v === 'G' ? 'B40000' : '505050');
+const RESULT_COLOR = (v) => (v === 'L' ? '007A00' : v === 'G' ? 'FF0000' : '505050');
 
 function txtCell(text, { bold = false, shade = null, color = '000000', align = AlignmentType.CENTER, width } = {}) {
     return new TableCell({
@@ -154,52 +154,39 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
     // Resolved System-A appendix tables, grouped by sub-clause code.
     const tablesForAppendix = await getResolvedTablesForReport(report.id);
 
-    // Build details + summary — now with per-klausul approval status
+    // Build details + summary
     const details = [];
     const summary = [];
+    const allFailedCodes = [];
+    const hasLetter = (code) => /[a-zA-Z]/i.test(code || '');
 
     (report.data || []).forEach(k => {
-        const kStatus = klausulStatuses[k.klausul];
-        const statusLabel = kStatus
-            ? { APPROVED: '✓ Disetujui', SUBMITTED: '⌛ Direview', DRAFT: '✎ Draft' }[kStatus.status] || ''
-            : '';
-
-        details.push({
-            code: k.klausul,
-            text: k.judul ? k.judul.toUpperCase() : '',
-            note: statusLabel,
-            result: '',
-            is_header: true,
-        });
-
+        // Collect decisions and failed items for this clause
         const subDecisions = [];
+        const failedItems = [];
+
         (k.sub_klausul || []).forEach(sub => {
-            // Sub-klausul header row — shows the sub code, title, and its own keputusan
-            details.push({
-                code: sub.kode,
-                text: sub.judul ? sub.judul.toUpperCase() : '',
-                note: sub.hasil_catatan || '-',
-                result: sub.keputusan || '-',
-                is_header: false,
-                is_sub_header: true,
-            });
             if (sub.keputusan) subDecisions.push(sub.keputusan);
 
-            sub.butir.forEach(b => {
-                const isCorrected = b.is_corrected && b.original_keputusan;
-
-                details.push({
-                    code: b.kode,
-                    text: b.teks,
-                    note: isCorrected
-                        ? `${b.hasil_catatan || ''} [Koreksi: ${b.original_keputusan} → ${b.keputusan}]`.trim()
-                        : b.hasil_catatan || '-',
-                    result: b.keputusan || '-',
-                    is_header: false,
-                    is_sub_header: false,
+            const failedButir = (sub.butir || []).filter(b => b.keputusan === 'G');
+            if (failedButir.length > 0) {
+                failedButir.forEach(b => {
+                    failedItems.push({
+                        code: sub.kode || b.kode,
+                        text: (b.teks || sub.judul || '').trim(),
+                        status: 'G',
+                    });
                 });
+            } else if (sub.keputusan === 'G') {
+                failedItems.push({
+                    code: sub.kode,
+                    text: (sub.judul || '').trim(),
+                    status: 'G',
+                });
+            }
 
-                subDecisions.push(b.keputusan);
+            (sub.butir || []).forEach(b => {
+                if (b.keputusan) subDecisions.push(b.keputusan);
             });
         });
 
@@ -207,10 +194,69 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         if (subDecisions.some(d => d === 'G')) clauseStatus = 'G';
         else if (subDecisions.length > 0 && subDecisions.every(d => d === 'TB')) clauseStatus = 'TB';
 
+        // Main clause header row for details: if any sub-clause/butir failed, main clause result must be 'G'
+        details.push({
+            code: (k.klausul || '').trim(),
+            text: k.judul ? k.judul.toUpperCase().trim() : '',
+            note: '',
+            result: clauseStatus === 'G' ? 'G' : '',
+            is_header: true,
+            is_fail: clauseStatus === 'G',
+        });
+
+        // Details sub rows
+        (k.sub_klausul || []).forEach(sub => {
+            const subResult = sub.keputusan || '-';
+            const subCode = hasLetter(sub.kode) ? '' : (sub.kode || '').trim();
+            details.push({
+                code: subCode,
+                text: (sub.judul || '').trim(),
+                note: (sub.hasil_catatan || '-').trim(),
+                result: subResult,
+                is_header: false,
+                is_sub_header: true,
+                is_fail: subResult === 'G',
+            });
+
+            (sub.butir || []).forEach(b => {
+                const isCorrected = b.is_corrected && b.original_keputusan;
+                const bResult = b.keputusan || '-';
+                const bCode = hasLetter(b.kode) ? '' : (b.kode || '').trim();
+
+                details.push({
+                    code: bCode,
+                    text: (b.teks || '').trim(),
+                    note: isCorrected
+                        ? `${b.hasil_catatan || ''} [Koreksi: ${b.original_keputusan} → ${b.keputusan}]`.trim()
+                        : (b.hasil_catatan || '-').trim(),
+                    result: bResult,
+                    is_header: false,
+                    is_sub_header: false,
+                    is_fail: bResult === 'G',
+                });
+            });
+        });
+
+        // Summary row for main clause
         summary.push({
-            clause: k.klausul,
-            title: k.judul ? k.judul.toUpperCase() : '',
+            clause: (k.klausul || '').trim(),
+            title: k.judul ? k.judul.toUpperCase().trim() : '',
             status: clauseStatus,
+            is_header: true,
+            is_fail: clauseStatus === 'G',
+        });
+
+        // Detailed rows in summary for failed items only
+        failedItems.forEach(item => {
+            const itemCode = (item.code || '').replace(/\.[a-zA-Z]+$/, '').trim();
+            summary.push({
+                clause: itemCode,
+                title: (item.text || '').trim(),
+                status: 'G',
+                is_header: false,
+                is_fail: true,
+            });
+            allFailedCodes.push(itemCode || item.code);
         });
     });
 
@@ -242,6 +288,7 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
     });
 
     const if_not_pass_text = 'tidak';
+    const uniqueFailedCodes = [...new Set(allFailedCodes)];
 
     // Use doc_* metadata if filled by drafter, fall back to order fields
     doc.render({
@@ -269,7 +316,8 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         image_product: productImgPath,
         image_component_product: productImgPath,
         marking_image: markingImgPath,
-        if_not_pass: details.some(d => d.result === 'G' || d.result?.includes('→')) ? if_not_pass_text : '',
+        if_not_pass: uniqueFailedCodes.length > 0 || details.some(d => d.result === 'G') ? if_not_pass_text : '',
+        failed_clauses_note: uniqueFailedCodes.length > 0 ? ` pada klausul ${uniqueFailedCodes.join(', ')}` : '',
     });
 
 

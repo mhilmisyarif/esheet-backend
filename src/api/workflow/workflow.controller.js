@@ -16,6 +16,7 @@ exports.createFullReportWorkflow = async (req, res) => {
         received_date, // tanggal masuk sampel (ISO date string)
         testingType, // "FULL" or "VERIFICATION"
         selectedClauses, // ["5", "7"]
+        technician_name, // optional assigned technician name
     } = req.body;
 
     // Validate received_date when provided
@@ -27,7 +28,16 @@ exports.createFullReportWorkflow = async (req, res) => {
         }
     }
 
-    const technicianId = req.user.id;
+    let technicianId = req.user.id;
+    const cleanTechName = (technician_name || '').toString().trim();
+    if (cleanTechName) {
+        const matchedUser = await prisma.user.findFirst({
+            where: { name: { equals: cleanTechName, mode: 'insensitive' } },
+        });
+        if (matchedUser) {
+            technicianId = matchedUser.id;
+        }
+    }
 
     // 1. Validate Lab
     const labCode = parseLabCodeFromOrder(order_no);
@@ -64,14 +74,23 @@ exports.createFullReportWorkflow = async (req, res) => {
         reportData = fullTemplateData;
     }
 
+    // Pre-populate technician name across all clauses if provided
+    if (cleanTechName) {
+        reportData = reportData.map(k => ({
+            ...k,
+            meta: {
+                ...(k.meta || {}),
+                tester_name: cleanTechName,
+            },
+        }));
+    }
+
     // 4. Run as a Transaction
     try {
         const newReport = await prisma.$transaction(async (tx) => {
-            // a. Create or find the Order
-            const order = await tx.order.upsert({
-                where: { order_no: order_no },
-                update: { applicant: applicant, applicant_address: applicant_address },
-                create: {
+            // a. Create the Order
+            const order = await tx.order.create({
+                data: {
                     order_no: order_no,
                     applicant: applicant,
                     applicant_address: applicant_address,

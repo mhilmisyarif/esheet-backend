@@ -88,6 +88,7 @@ async function getSampleById(id) {
                     test_started_at: true,
                     test_finished_at: true,
                     data: true,
+                    technician: { select: { id: true, name: true } },
                     ReportImages: { orderBy: { id: 'desc' } },
                 },
             },
@@ -96,7 +97,8 @@ async function getSampleById(id) {
     if (!sample) return null;
 
     if (sample.Report) {
-        const dates = (Array.isArray(sample.Report.data) ? sample.Report.data : [])
+        const clauses = Array.isArray(sample.Report.data) ? sample.Report.data : [];
+        const dates = clauses
             .map(k => k.meta?.test_datetime)
             .filter(Boolean)
             .map(d => new Date(d))
@@ -104,6 +106,10 @@ async function getSampleById(id) {
             .sort((a, b) => a - b);
         sample.Report.test_period_start = dates[0] || null;
         sample.Report.test_period_end = dates.length ? dates[dates.length - 1] : null;
+
+        const testerName = clauses.find(k => k.meta?.tester_name)?.meta?.tester_name || sample.Report.technician?.name || null;
+        sample.Report.technician_name = testerName;
+
         delete sample.Report.data;
     }
     return sample;
@@ -112,13 +118,16 @@ async function getSampleById(id) {
 /**
  * Updates the editable datasheet-info fields of a sample and its order.
  * Editable: applicant + applicant_address (Order), brand, model, factory,
- * factory_address, country_origin, iwo_no (Sample). The order number, lab,
- * standard and testing type are intentionally NOT editable here.
+ * factory_address, country_origin, iwo_no (Sample), technician_name (Report).
+ * The order number, lab, standard and testing type are intentionally NOT editable here.
  */
 async function updateSample(id, data) {
     const existing = await prisma.sample.findUnique({
         where: { id },
-        select: { orderId: true },
+        select: {
+            orderId: true,
+            Report: { select: { id: true, data: true } },
+        },
     });
     if (!existing) return null;
 
@@ -149,16 +158,65 @@ async function updateSample(id, data) {
     if (brand) sampleData.brand = brand;
     if (model) sampleData.model = model;
 
-    await prisma.$transaction([
-        prisma.order.update({
-            where: { id: existing.orderId },
+    // If this order is shared with other samples, detach to a new order so other samples aren't modified
+    const otherCount = await prisma.sample.count({
+        where: { orderId: existing.orderId, NOT: { id } },
+    });
+
+    if (otherCount > 0) {
+        const existingOrder = await prisma.order.findUnique({ where: { id: existing.orderId } });
+        const newOrder = await prisma.order.create({
             data: {
+                order_no: existingOrder?.order_no || '',
                 applicant: clean(data.applicant),
                 applicant_address: clean(data.applicant_address),
+                labId: existingOrder?.labId || 1,
             },
-        }),
-        prisma.sample.update({ where: { id }, data: sampleData }),
-    ]);
+        });
+        sampleData.orderId = newOrder.id;
+        await prisma.sample.update({ where: { id }, data: sampleData });
+    } else {
+        await prisma.$transaction([
+            prisma.order.update({
+                where: { id: existing.orderId },
+                data: {
+                    applicant: clean(data.applicant),
+                    applicant_address: clean(data.applicant_address),
+                },
+            }),
+            prisma.sample.update({ where: { id }, data: sampleData }),
+        ]);
+    }
+
+    // If technician_name is provided and Report exists, update Report.data clauses
+    if (data.technician_name !== undefined && existing.Report) {
+        const techName = clean(data.technician_name);
+        if (Array.isArray(existing.Report.data)) {
+            const updatedData = existing.Report.data.map(k => ({
+                ...k,
+                meta: {
+                    ...(k.meta || {}),
+                    tester_name: techName || '',
+                },
+            }));
+
+            let matchedUserId = null;
+            if (techName) {
+                const matchedUser = await prisma.user.findFirst({
+                    where: { name: { equals: techName, mode: 'insensitive' } },
+                });
+                if (matchedUser) matchedUserId = matchedUser.id;
+            }
+
+            await prisma.report.update({
+                where: { id: existing.Report.id },
+                data: {
+                    data: updatedData,
+                    ...(matchedUserId ? { technicianId: matchedUserId } : {}),
+                },
+            });
+        }
+    }
 
     return getSampleById(id);
 }

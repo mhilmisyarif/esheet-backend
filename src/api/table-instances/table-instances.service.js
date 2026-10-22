@@ -1,14 +1,19 @@
 const prisma = require('../../lib/prisma');
 
+const pendingAutoprovision = new Map();
+
 /**
  * Get all instances for a report, optionally filtered by subClauseCode.
  * Returns instances with their template definitions attached.
  */
 async function getInstances({ reportId, subClauseCode }) {
+    const parentCode = subClauseCode && subClauseCode.includes('.') ? subClauseCode.split('.')[0] : null;
+    const subCodes = [subClauseCode, parentCode].filter(Boolean);
+
     const instances = await prisma.tableInstance.findMany({
         where: {
             reportId,
-            ...(subClauseCode ? { template: { subClauseCode } } : {}),
+            ...(subClauseCode ? { template: { subClauseCode: { in: subCodes } } } : {}),
         },
         include: {
             template: true,
@@ -96,39 +101,50 @@ async function createInstance({ reportId, templateId, userId, userRole }) {
  * that exists for this report's TestStandard and doesn't already have an instance.
  */
 async function autoprovisionInstances(reportId) {
-    const report = await prisma.report.findUnique({
-        where: { id: reportId },
-        include: { sample: true },
-    });
-    if (!report) return [];
+    if (pendingAutoprovision.has(reportId)) {
+        return pendingAutoprovision.get(reportId);
+    }
+    const p = (async () => {
+        try {
+            const report = await prisma.report.findUnique({
+                where: { id: reportId },
+                include: { sample: true },
+            });
+            if (!report) return [];
 
-    const templates = await prisma.tableTemplate.findMany({
-        where: { testStandardId: report.sample.testStandardId },
-    });
+            const templates = await prisma.tableTemplate.findMany({
+                where: { testStandardId: report.sample.testStandardId },
+            });
 
-    const existingInstances = await prisma.tableInstance.findMany({
-        where: { reportId },
-        select: { templateId: true },
-    });
-    const existingTemplateIds = new Set(existingInstances.map(i => i.templateId));
+            const existingInstances = await prisma.tableInstance.findMany({
+                where: { reportId },
+                select: { templateId: true },
+            });
+            const existingTemplateIds = new Set(existingInstances.map((i) => i.templateId));
 
-    const toCreate = templates.filter(t => !existingTemplateIds.has(t.id));
+            const toCreate = templates.filter((t) => !existingTemplateIds.has(t.id));
 
-    if (toCreate.length === 0) return [];
+            if (toCreate.length === 0) return [];
 
-    await prisma.tableInstance.createMany({
-        data: toCreate.map((t, i) => ({
-            reportId,
-            templateId: t.id,
-            data: {},
-            order: i,
-        })),
-    });
+            await prisma.tableInstance.createMany({
+                data: toCreate.map((t, i) => ({
+                    reportId,
+                    templateId: t.id,
+                    data: {},
+                    order: i,
+                })),
+            });
 
-    return prisma.tableInstance.findMany({
-        where: { reportId, templateId: { in: toCreate.map(t => t.id) } },
-        include: { template: true },
-    });
+            return prisma.tableInstance.findMany({
+                where: { reportId, templateId: { in: toCreate.map((t) => t.id) } },
+                include: { template: true },
+            });
+        } finally {
+            pendingAutoprovision.delete(reportId);
+        }
+    })();
+    pendingAutoprovision.set(reportId, p);
+    return p;
 }
 
 /**
