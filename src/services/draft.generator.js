@@ -190,6 +190,35 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
             });
         });
 
+        // Check if any appendix table for this clause failed
+        const clauseTables = Object.entries(tablesForAppendix)
+            .filter(([subCode]) => subCode === k.klausul || subCode.startsWith(k.klausul + '.') || subCode.split('.')[0] === k.klausul)
+            .flatMap(([, tables]) => tables);
+
+        const failedTables = clauseTables.filter(tbl => {
+            return (tbl.resolved?.sections || []).some(sec => {
+                if (sec.type === 'key_value') {
+                    return (sec.rows || []).some(r => r.result === 'G');
+                }
+                if (sec.type === 'table') {
+                    const resCols = (sec.columns || []).filter(c => c.isResult);
+                    return (sec.rows || []).some(row => resCols.some(c => row.cells && row.cells[c.id] === 'G'));
+                }
+                return false;
+            });
+        });
+
+        if (failedTables.length > 0) {
+            subDecisions.push('G');
+            failedTables.forEach(ft => {
+                failedItems.push({
+                    code: ft.subClauseCode || k.klausul,
+                    text: `${ft.title || 'Tabel Lampiran Uji'} (Lampiran ${ft.subClauseCode || k.klausul})`,
+                    status: 'G',
+                });
+            });
+        }
+
         let clauseStatus = 'L';
         if (subDecisions.some(d => d === 'G')) clauseStatus = 'G';
         else if (subDecisions.length > 0 && subDecisions.every(d => d === 'TB')) clauseStatus = 'TB';
