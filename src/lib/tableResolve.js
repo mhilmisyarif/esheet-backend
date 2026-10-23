@@ -71,7 +71,8 @@ function resolveComputedCells(cells, columns) {
             return;
         }
         let passes = false;
-        switch (rule.op) {
+        const op = rule.op || 'lte';
+        switch (op) {
             case 'lte': passes = v <= rule.threshold; break;
             case 'gte': passes = v >= rule.threshold; break;
             case 'lt': passes = v < rule.threshold; break;

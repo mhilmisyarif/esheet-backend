@@ -100,7 +100,7 @@ model TestStandard {
 // --- WORKFLOW ---
 model Order {
   id        Int      @id @default(autoincrement())
-  order_no  String   @unique
+  order_no  String
   lab       Lab      @relation(fields: [labId], references: [id])
   labId     Int
   applicant String?
@@ -109,6 +109,8 @@ model Order {
 
   // Relations
   Samples Sample[]
+
+  @@index([order_no])
 }
 
 model Sample {
