@@ -27,15 +27,43 @@ async function getResolvedTablesForReport(reportId) {
 
     for (const [subKode, instances] of Object.entries(grouped)) {
         out[subKode] = instances
-            .map((inst) => ({
-                instanceId: inst.id,
-                order: inst.order,
-                title: inst.template?.title || '',
-                subClauseCode: subKode,
-                resolved: resolveInstance(inst.template?.definition, inst.data),
-            }))
+            .map((inst) => {
+                const tplGrid = inst.template?.definition?.spreadsheetGrid;
+                const instGrid = inst.data?.spreadsheetGrid;
+                let combinedGrid = instGrid || tplGrid || null;
+                if (tplGrid && instGrid && instGrid.cells) {
+                    const mergedCells = { ...tplGrid.cells };
+                    Object.keys(instGrid.cells).forEach((k) => {
+                        mergedCells[k] = {
+                            ...(mergedCells[k] || {}),
+                            ...instGrid.cells[k],
+                        };
+                    });
+                    combinedGrid = {
+                        ...tplGrid,
+                        ...instGrid,
+                        cells: mergedCells,
+                    };
+                }
+                if (combinedGrid && combinedGrid.cells) {
+                    Object.keys(combinedGrid.cells).forEach((k) => {
+                        const c = combinedGrid.cells[k];
+                        if (c && !c.f && c.v !== undefined && c.v !== null && c.v !== '') {
+                            c.computed = c.v;
+                        }
+                    });
+                }
+                return {
+                    instanceId: inst.id,
+                    order: inst.order,
+                    title: inst.template?.title || '',
+                    subClauseCode: subKode,
+                    resolved: resolveInstance(inst.template?.definition, inst.data),
+                    spreadsheetGrid: combinedGrid,
+                };
+            })
             // keep only tables that actually have content to render
-            .filter((t) => t.resolved.sections.length > 0);
+            .filter((t) => t.resolved.sections.length > 0 || (t.spreadsheetGrid && Object.keys(t.spreadsheetGrid.cells || {}).length > 0));
     }
 
     return out;

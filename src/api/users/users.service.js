@@ -44,4 +44,50 @@ async function updateUserRole({ userId, role, actingUserId }) {
     });
 }
 
-module.exports = { listUsers, updateUserRole, VALID_ROLES };
+/**
+ * Deletes a user. Refuses to delete self, the last remaining ADMIN, or a user with active reports.
+ */
+async function deleteUser({ userId, actingUserId }) {
+    if (userId === actingUserId) {
+        const err = new Error('Tidak dapat menghapus akun Anda sendiri.');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+            _count: {
+                select: {
+                    ReportsAsTechnician: true,
+                    ReportsAsEngineer: true,
+                },
+            },
+        },
+    });
+
+    if (!user) {
+        const err = new Error('User tidak ditemukan.');
+        err.statusCode = 404;
+        throw err;
+    }
+
+    if (user.role === 'ADMIN') {
+        const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+        if (adminCount <= 1) {
+            const err = new Error('Tidak bisa menghapus ADMIN terakhir.');
+            err.statusCode = 400;
+            throw err;
+        }
+    }
+
+    if (user._count && (user._count.ReportsAsTechnician > 0 || user._count.ReportsAsEngineer > 0)) {
+        const err = new Error(`Tidak dapat menghapus user "${user.name}" karena memiliki riwayat laporan pengujian di laboratorium.`);
+        err.statusCode = 400;
+        throw err;
+    }
+
+    return prisma.user.delete({ where: { id: userId } });
+}
+
+module.exports = { listUsers, updateUserRole, deleteUser, VALID_ROLES };
