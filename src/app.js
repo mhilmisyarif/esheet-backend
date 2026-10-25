@@ -49,6 +49,16 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads'), {
     },
 }));
 
+// Network storage (deployment only): serves STORAGE_BASE_PATH at /files
+if (process.env.STORAGE_BASE_PATH) {
+    app.use('/files', express.static(process.env.STORAGE_BASE_PATH, {
+        setHeaders(res) {
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self'");
+        },
+    }));
+}
+
 // --- API routes ---
 app.use('/api', apiRouter);
 

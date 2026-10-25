@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-// Base server network location (Adjust drive letter or network path as needed)
-const SERVER_BASE_PATH = process.env.STORAGE_BASE_PATH || 'X:\\1. FILE ORDER';
+// Base server network location, e.g. X:\\1. FILE ORDER (set at deployment).
+// Empty = local mode: images stay in ./uploads and are served at /uploads.
+const SERVER_BASE_PATH = process.env.STORAGE_BASE_PATH || null;
 
 // Map lab keys to their exact folder names
 const LAB_FOLDERS = {
@@ -52,5 +53,6 @@ function getTargetImageDirectory(labId, orderFolderName, date = new Date()) {
 
 module.exports = {
     getTargetImageDirectory,
+    isNetworkStorage: () => !!SERVER_BASE_PATH,
     SERVER_BASE_PATH
 };
