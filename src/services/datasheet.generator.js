@@ -960,9 +960,6 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
                 // Col 2: Hasil / Catatan (sub level) — uniform 0.5 stroke, separate vertical border!
                 rectStroke(doc, scx, y, bColW[2], subRowH, 'black', 0.5);
                 let subNoteText = sub.hasil_catatan || '';
-                if (subCorrected) {
-                    subNoteText = subNoteText ? `${subNoteText} [Koreksi: ${sub.original_keputusan} → ${sub.keputusan}]` : `[Koreksi: ${sub.original_keputusan} → ${sub.keputusan}]`;
-                }
                 if (subNoteText) {
                     const subNoteLines = wrapText(doc, subNoteText, bColW[2] - 8, 8);
                     const subNoteStartY = y + (subRowH - subNoteLines.length * 10) / 2;
@@ -984,10 +981,6 @@ async function generateDatasheetPdf(report, klausulStatuses, resolvedTables = {}
                     const isCorrected = b.is_corrected && b.original_keputusan;
                     doc.font(FONT_REG);
                     let noteText = b.hasil_catatan || '';
-                    if (isCorrected) {
-                        noteText = noteText ? `${noteText} [Koreksi: ${b.original_keputusan} → ${b.keputusan}]` : `[Koreksi: ${b.original_keputusan} → ${b.keputusan}]`;
-                    }
-                    if (!noteText) noteText = '-';
 
                     const textLines = wrapText(doc, b.teks || '', bColW[1] - 8, 8);
                     const noteLines = wrapText(doc, noteText, bColW[2] - 8, 8);
