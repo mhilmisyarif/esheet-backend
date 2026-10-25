@@ -54,6 +54,7 @@ async function getReportById(id) {
         where: { id },
         include: {
             sample: { include: { order: true } },
+            technician: { select: { id: true, name: true } },
         },
     });
 }
@@ -67,6 +68,7 @@ async function getReportBySampleId(sampleId) {
         where: { sampleId },
         include: {
             sample: { include: { order: true } },
+            technician: { select: { id: true, name: true } },
             ReportImages: true,
         },
     });

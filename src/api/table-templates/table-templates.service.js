@@ -136,7 +136,7 @@ function validateDefinition(def) {
         err.statusCode = 400;
         throw err;
     }
-    const validLayouts = ['key_value', 'table', 'mixed'];
+    const validLayouts = ['key_value', 'table', 'mixed', 'spreadsheet'];
     if (!validLayouts.includes(def.layout)) {
         const err = new Error(`definition.layout must be one of: ${validLayouts.join(', ')}`);
         err.statusCode = 400;
@@ -168,6 +168,7 @@ function validateDefinition(def) {
             section.columns.forEach((col, ci) => {
                 if (col.formula) {
                     const f = col.formula;
+                    if (typeof f === 'string') return;
                     if (Array.isArray(f.cols)) {
                         if (f.cols.length === 0) {
                             const err = new Error(`sections[${i}].columns[${ci}].formula.cols must be non-empty.`);

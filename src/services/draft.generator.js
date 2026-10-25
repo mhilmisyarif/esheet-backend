@@ -34,14 +34,30 @@ const BORDERS = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER };
 const MARGINS = { top: 60, bottom: 60, left: 100, right: 100 };
 
 const TOTAL_W = 9026;
-const RESULT_COLOR = (v) => (v === 'L' ? '007A00' : v === 'G' ? 'B40000' : '505050');
+const RESULT_COLOR = (v) => (v === 'G' ? 'FF0000' : '000000');
 
-function txtCell(text, { bold = false, shade = null, color = '000000', align = AlignmentType.CENTER, width } = {}) {
+function getSpreadsheetCellValue(cell) {
+    if (!cell) return '';
+    if (cell.f) {
+        return cell.computed !== undefined && cell.computed !== null && cell.computed !== ''
+            ? cell.computed
+            : (cell.v ?? '');
+    }
+    if (cell.v !== undefined && cell.v !== null && cell.v !== '') {
+        return cell.v;
+    }
+    return cell.computed !== undefined && cell.computed !== null ? cell.computed : (cell.v ?? '');
+}
+
+function txtCell(text, { bold = false, shade = null, color = '000000', align = AlignmentType.CENTER, width, columnSpan, rowSpan, vAlign, orientation } = {}) {
     return new TableCell({
         borders: BORDERS, margins: MARGINS,
+        ...(columnSpan && columnSpan > 1 ? { columnSpan } : {}),
+        ...(rowSpan && rowSpan > 1 ? { rowSpan } : {}),
         ...(width ? { width: { size: width, type: WidthType.DXA } } : {}),
         ...(shade ? { shading: { fill: shade, type: ShadingType.CLEAR } } : {}),
-        verticalAlign: VerticalAlign.CENTER,
+        verticalAlign: vAlign === 'top' ? VerticalAlign.TOP : vAlign === 'bottom' ? VerticalAlign.BOTTOM : VerticalAlign.CENTER,
+        ...(orientation === 'vertical' ? { textDirection: 'btLr' } : {}),
         children: [new Paragraph({
             alignment: align,
             children: [new TextRun({ text: String(text ?? ''), bold, color, size: 18, font: 'Arial' })],
@@ -49,18 +65,293 @@ function txtCell(text, { bold = false, shade = null, color = '000000', align = A
     });
 }
 
-// Build docx elements for one resolved System-A table (key_value + table
-// sections with computed/result cells already filled by resolveInstance).
-function buildTemplateWordTable(tbl) {
-    const elements = [];
-    if (tbl.title) {
-        elements.push(new Paragraph({
-            children: [new TextRun({ text: tbl.title, bold: true, size: 20, font: 'Arial' })],
-            spacing: { before: 120, after: 60 },
-        }));
+const HEADER_GREY = 'E5E7EB'; // Neutral light grey header as requested
+
+function sanitizeCellShade(bg, isHeaderRow = false) {
+    if (!bg) {
+        return isHeaderRow ? HEADER_GREY : null;
+    }
+    const clean = String(bg).replace('#', '').toUpperCase();
+    if (clean === 'FFFFFF' || clean === 'FFF') {
+        return isHeaderRow ? HEADER_GREY : null;
+    }
+    // Any blue hue -> replace with grey 'E5E7EB'
+    const blueList = [
+        'EFF6FF', 'DBEAFE', 'BFDBFE', '93C5FD', '60A5FA', '3B82F6',
+        '2563EB', '1D4ED8', '1E40AF', '1E3A8A', 'E0F2FE', 'BAE6FD',
+        '7DD3FC', '38BDF8', '0EA5E9', '0284C7', '0369A1', '075985',
+        '0C4A6E', 'F0F9FF', 'E0F7FA', 'E6F7FF', 'BAE7FF', '91D5FF'
+    ];
+    if (blueList.includes(clean)) {
+        return HEADER_GREY;
+    }
+    if (clean.length === 6) {
+        const r = parseInt(clean.slice(0, 2), 16);
+        const g = parseInt(clean.slice(2, 4), 16);
+        const b = parseInt(clean.slice(4, 6), 16);
+        if (b > 180 && b > r + 15 && b > g + 10) {
+            return HEADER_GREY;
+        }
+    }
+    return clean;
+}
+
+function computeTableStatus(tbl) {
+    let hasG = false;
+    let hasL = false;
+    let hasTB = false;
+
+    if (tbl.spreadsheetGrid && tbl.spreadsheetGrid.cells) {
+        Object.values(tbl.spreadsheetGrid.cells).forEach((cell) => {
+            const v = String(getSpreadsheetCellValue(cell)).trim().toUpperCase();
+            if (cell.isResult || v === 'G' || v === 'L' || v === 'TB') {
+                if (v === 'G') hasG = true;
+                else if (v === 'L') hasL = true;
+                else if (v === 'TB') hasTB = true;
+            }
+        });
     }
 
-    tbl.resolved.sections.forEach((section) => {
+    if (tbl.resolved && tbl.resolved.sections) {
+        tbl.resolved.sections.forEach((sec) => {
+            if (sec.type === 'key_value') {
+                (sec.rows || []).forEach((r) => {
+                    const res = String(r.result || '').trim().toUpperCase();
+                    if (res === 'G') hasG = true;
+                    else if (res === 'L') hasL = true;
+                    else if (res === 'TB') hasTB = true;
+                });
+            } else if (sec.type === 'table') {
+                const resCols = (sec.columns || []).filter((c) => c.isResult);
+                (sec.rows || []).forEach((row) => {
+                    resCols.forEach((c) => {
+                        const val = String(row.cells && row.cells[c.id] || '').trim().toUpperCase();
+                        if (val === 'G') hasG = true;
+                        else if (val === 'L') hasL = true;
+                        else if (val === 'TB') hasTB = true;
+                    });
+                });
+            }
+        });
+    }
+
+    if (hasG) return 'G';
+    if (hasL) return 'L';
+    if (hasTB) return 'TB';
+    return 'L';
+}
+
+function buildUnifiedTopRow(subCode, tbl, clauseTitle, colCount, columnWidths) {
+    const clauseNum = String(subCode || tbl.subClauseCode || '').trim();
+
+    let rawTitle = (tbl.title || clauseTitle || '').trim();
+    let formattedTitle = rawTitle;
+    if (formattedTitle) {
+        if (!/^TABEL/i.test(formattedTitle)) {
+            formattedTitle = `TABEL: ${formattedTitle}`;
+        }
+    } else {
+        formattedTitle = 'TABEL PENGUJIAN';
+    }
+
+    const tableStatus = computeTableStatus(tbl);
+    const statusColor = tableStatus === 'G' ? 'FF0000' : '000000';
+
+    if (colCount >= 3) {
+        const midWidth = columnWidths.slice(1, colCount - 1).reduce((a, b) => a + b, 0);
+        return new TableRow({
+            tableHeader: true,
+            children: [
+                txtCell(clauseNum, {
+                    bold: true,
+                    align: AlignmentType.LEFT,
+                    width: columnWidths[0],
+                    columnSpan: 1,
+                    shade: null,
+                }),
+                txtCell(formattedTitle, {
+                    bold: true,
+                    align: AlignmentType.LEFT,
+                    width: midWidth,
+                    columnSpan: colCount - 2,
+                    shade: null,
+                }),
+                txtCell(tableStatus, {
+                    bold: true,
+                    align: AlignmentType.CENTER,
+                    width: columnWidths[colCount - 1],
+                    columnSpan: 1,
+                    color: statusColor,
+                    shade: null,
+                }),
+            ],
+        });
+    }
+
+    if (colCount === 2) {
+        return new TableRow({
+            tableHeader: true,
+            children: [
+                txtCell(`${clauseNum}  ${formattedTitle}`, {
+                    bold: true,
+                    align: AlignmentType.LEFT,
+                    width: columnWidths[0],
+                    columnSpan: 1,
+                    shade: null,
+                }),
+                txtCell(tableStatus, {
+                    bold: true,
+                    align: AlignmentType.CENTER,
+                    width: columnWidths[1],
+                    columnSpan: 1,
+                    color: statusColor,
+                    shade: null,
+                }),
+            ],
+        });
+    }
+
+    return new TableRow({
+        tableHeader: true,
+        children: [
+            txtCell(`${clauseNum}  ${formattedTitle}  [${tableStatus}]`, {
+                bold: true,
+                align: AlignmentType.LEFT,
+                width: columnWidths[0],
+                columnSpan: 1,
+                shade: null,
+            }),
+        ],
+    });
+}
+
+function buildSpreadsheetWordTable(tbl, subCode, clauseTitle) {
+    const elements = [];
+    const grid = tbl.spreadsheetGrid;
+    const { rowCount = 8, colCount = 5, cells = {}, merges = [] } = grid;
+
+    const mergeRootMap = {};
+    const coveredCells = new Set();
+    merges.forEach((m) => {
+        mergeRootMap[`${m.r},${m.c}`] = m;
+        for (let ro = 0; ro < m.rSpan; ro++) {
+            for (let co = 0; co < m.cSpan; co++) {
+                if (ro !== 0 || co !== 0) {
+                    coveredCells.add(`${m.r + ro},${m.c + co}`);
+                }
+            }
+        }
+    });
+
+    // Estimate column weights based on content and orientation
+    const weights = [];
+    for (let c = 0; c < colCount; c++) {
+        let maxLen = 0;
+        let isVert = false;
+        let allShortResults = true;
+
+        for (let r = 0; r < rowCount; r++) {
+            const key = `${r},${c}`;
+            const cell = cells[key];
+            if (!cell) continue;
+            const merge = mergeRootMap[key];
+            if (merge && merge.cSpan > 1) continue;
+            if (cell.orientation === 'vertical') isVert = true;
+
+            const text = String(getSpreadsheetCellValue(cell)).trim();
+            if (text.length > maxLen) maxLen = text.length;
+            if (text !== '' && text !== 'L' && text !== 'G' && text !== 'TB' && text !== '-' && text.length > 2) {
+                allShortResults = false;
+            }
+        }
+
+        if (isVert) {
+            weights.push(1.2);
+        } else if (allShortResults && maxLen <= 3) {
+            weights.push(1.5);
+        } else if (maxLen <= 8) {
+            weights.push(2.5);
+        } else if (maxLen <= 18) {
+            weights.push(4.5);
+        } else {
+            weights.push(Math.min(10, Math.max(5, maxLen * 0.35)));
+        }
+    }
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    const columnWidths = weights.map((w) => Math.floor((w / totalWeight) * TOTAL_W));
+    const currentSum = columnWidths.reduce((a, b) => a + b, 0);
+    const diff = TOTAL_W - currentSum;
+    const maxIdx = weights.indexOf(Math.max(...weights));
+    columnWidths[maxIdx] += diff;
+
+    // Top unified header row
+    const topRow = buildUnifiedTopRow(subCode, tbl, clauseTitle, colCount, columnWidths);
+    const tableRows = [topRow];
+
+    for (let r = 0; r < rowCount; r++) {
+        const rowCells = [];
+        const isHeader = (r === 0);
+
+        for (let c = 0; c < colCount; c++) {
+            const key = `${r},${c}`;
+            if (coveredCells.has(key)) continue;
+
+            const cell = cells[key] || {};
+            const merge = mergeRootMap[key];
+            const val = getSpreadsheetCellValue(cell);
+
+            const shade = sanitizeCellShade(cell.bg, isHeader);
+
+            let align = AlignmentType.CENTER;
+            if (cell.align === 'left') align = AlignmentType.LEFT;
+            else if (cell.align === 'right') align = AlignmentType.RIGHT;
+
+            const width = merge && merge.cSpan > 1
+                ? columnWidths.slice(c, c + merge.cSpan).reduce((a, b) => a + b, 0)
+                : columnWidths[c];
+
+            const isResultCell = cell.isResult || (grid.colMeta && grid.colMeta[c]?.isResult) || (val === 'L' || val === 'G' || val === 'TB');
+
+            rowCells.push(txtCell(val, {
+                bold: !!cell.bold || isHeader,
+                shade,
+                color: isResultCell ? RESULT_COLOR(val) : '000000',
+                align,
+                width,
+                columnSpan: merge?.cSpan || 1,
+                rowSpan: merge?.rSpan || 1,
+                vAlign: cell.vAlign,
+                orientation: cell.orientation,
+            }));
+        }
+        if (rowCells.length > 0) {
+            tableRows.push(new TableRow({
+                tableHeader: isHeader,
+                children: rowCells,
+            }));
+        }
+    }
+
+    elements.push(new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        columnWidths,
+        rows: tableRows,
+    }));
+    elements.push(new Paragraph({ children: [], spacing: { after: 180 } }));
+    return elements;
+}
+
+// Build docx elements for one resolved System-A table (key_value + table
+// sections with computed/result cells already filled by resolveInstance).
+function buildTemplateWordTable(tbl, subCode, clauseTitle) {
+    if (tbl.spreadsheetGrid && Object.keys(tbl.spreadsheetGrid.cells || {}).length > 0) {
+        return buildSpreadsheetWordTable(tbl, subCode, clauseTitle);
+    }
+
+    const elements = [];
+
+    (tbl.resolved?.sections || []).forEach((section) => {
         if (section.label) {
             elements.push(new Paragraph({
                 children: [new TextRun({ text: section.label, bold: true, size: 18, font: 'Arial' })],
@@ -73,15 +364,23 @@ function buildTemplateWordTable(tbl) {
             const lw = Math.floor(TOTAL_W * (hasResult ? 0.52 : 0.5));
             const vw = Math.floor(TOTAL_W * (hasResult ? 0.34 : 0.5));
             const rw = TOTAL_W - lw - vw;
-            const rows = section.rows.map((r) => new TableRow({
-                children: [
-                    txtCell(r.label, { shade: 'F2F2F2', align: AlignmentType.LEFT, width: lw }),
-                    txtCell(r.value || '-', { align: AlignmentType.LEFT, width: vw }),
-                    ...(hasResult ? [txtCell(r.result || '-', { bold: true, color: RESULT_COLOR(r.result), width: rw })] : []),
-                ],
-            }));
             const columnWidths = hasResult ? [lw, vw, rw] : [lw, vw];
-            elements.push(new Table({ width: { size: TOTAL_W, type: WidthType.DXA }, columnWidths, rows }));
+
+            const topRow = buildUnifiedTopRow(subCode, tbl, clauseTitle, columnWidths.length, columnWidths);
+
+            const rows = [
+                topRow,
+                ...section.rows.map((r) => new TableRow({
+                    children: [
+                        txtCell(r.label, { shade: HEADER_GREY, align: AlignmentType.LEFT, width: lw, bold: true }),
+                        txtCell(r.value || '-', { align: AlignmentType.LEFT, width: vw }),
+                        ...(hasResult ? [txtCell(r.result || '-', { bold: true, color: RESULT_COLOR(r.result), width: rw })] : []),
+                    ],
+                })),
+            ];
+
+            elements.push(new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, columnWidths, rows }));
+            elements.push(new Paragraph({ children: [], spacing: { after: 180 } }));
         } else if (section.type === 'table') {
             const cols = section.columns;
             const weights = cols.map((c) => (typeof c.width === 'number' && c.width > 0 ? c.width : 100));
@@ -90,10 +389,42 @@ function buildTemplateWordTable(tbl) {
             const currentSum = columnWidths.slice(0, -1).reduce((s, w) => s + w, 0);
             columnWidths[columnWidths.length - 1] = Math.max(100, TOTAL_W - currentSum);
 
+            const topRow = buildUnifiedTopRow(subCode, tbl, clauseTitle, cols.length, columnWidths);
+            const headerRows = [];
+
+            if (section.headerGroups && section.headerGroups.length > 0) {
+                const tier1Cells = [];
+                const rendered = new Set();
+                cols.forEach((col, i) => {
+                    if (rendered.has(col.id)) return;
+                    const group = section.headerGroups.find((g) => (g.colIds || []).includes(col.id));
+                    if (group) {
+                        const span = group.colIds.length;
+                        group.colIds.forEach((id) => rendered.add(id));
+                        const groupWidth = group.colIds.reduce((sum, cid) => {
+                            const cIdx = cols.findIndex((c) => c.id === cid);
+                            return sum + (cIdx >= 0 ? columnWidths[cIdx] : 0);
+                        }, 0);
+                        tier1Cells.push(txtCell(group.title, {
+                            bold: true,
+                            shade: HEADER_GREY,
+                            columnSpan: span,
+                            width: groupWidth,
+                        }));
+                    } else {
+                        rendered.add(col.id);
+                        tier1Cells.push(txtCell('', { shade: HEADER_GREY, width: columnWidths[i] }));
+                    }
+                });
+                headerRows.push(new TableRow({ tableHeader: true, children: tier1Cells }));
+            }
+
             const headerRow = new TableRow({
                 tableHeader: true,
-                children: cols.map((c, i) => txtCell(c.header || '', { bold: true, shade: 'D9D9D9', width: columnWidths[i] })),
+                children: cols.map((c, i) => txtCell(c.header || '', { bold: true, shade: HEADER_GREY, width: columnWidths[i] })),
             });
+            headerRows.push(headerRow);
+
             const dataRows = section.rows.map((row) => new TableRow({
                 children: cols.map((c, i) => {
                     const val = row.cells[c.id];
@@ -102,7 +433,12 @@ function buildTemplateWordTable(tbl) {
                         : txtCell(val ?? '', { width: columnWidths[i] });
                 }),
             }));
-            elements.push(new Table({ width: { size: TOTAL_W, type: WidthType.DXA }, columnWidths, rows: [headerRow, ...dataRows] }));
+
+            elements.push(new Table({
+                width: { size: 100, type: WidthType.PERCENTAGE },
+                columnWidths,
+                rows: [topRow, ...headerRows, ...dataRows],
+            }));
 
             if (section.footnote) {
                 elements.push(new Paragraph({
@@ -110,10 +446,10 @@ function buildTemplateWordTable(tbl) {
                     spacing: { before: 40, after: 80 },
                 }));
             }
+            elements.push(new Paragraph({ children: [], spacing: { after: 180 } }));
         }
     });
 
-    elements.push(new Paragraph({ children: [] }));
     return elements;
 }
 
@@ -127,22 +463,19 @@ function buildAppendix(resolvedTables, reportData) {
 
     const elements = [new Paragraph({
         pageBreakBefore: true,
-        children: [new TextRun({ text: 'LAMPIRAN TABEL', bold: true, size: 24, font: 'Arial' })],
-        spacing: { after: 240 },
+        children: [],
+        spacing: { after: 120 },
     })];
 
     Object.entries(resolvedTables).forEach(([subCode, tables]) => {
-        const heading = titleMap[subCode]
-            ? `Klausul ${subCode} — ${titleMap[subCode]}`
-            : `Klausul ${subCode}`;
-        elements.push(new Paragraph({
-            children: [new TextRun({ text: heading, bold: true, size: 20, font: 'Arial' })],
-            spacing: { before: 200, after: 80 },
-        }));
         tables
             .slice()
             .sort((a, b) => a.order - b.order)
-            .forEach(t => buildTemplateWordTable(t).forEach(el => elements.push(el)));
+            .forEach(t => {
+                const clauseTitle = titleMap[subCode] || '';
+                const tableEls = buildTemplateWordTable(t, subCode, clauseTitle);
+                tableEls.forEach(el => elements.push(el));
+            });
     });
     return elements;
 }
@@ -154,63 +487,124 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
     // Resolved System-A appendix tables, grouped by sub-clause code.
     const tablesForAppendix = await getResolvedTablesForReport(report.id);
 
-    // Build details + summary — now with per-klausul approval status
+    // Build details + summary
     const details = [];
     const summary = [];
+    const allFailedCodes = [];
+    const hasLetter = (code) => /[a-zA-Z]/i.test(code || '');
 
     (report.data || []).forEach(k => {
-        const kStatus = klausulStatuses[k.klausul];
-        const statusLabel = kStatus
-            ? { APPROVED: '✓ Disetujui', SUBMITTED: '⌛ Direview', DRAFT: '✎ Draft' }[kStatus.status] || ''
-            : '';
-
-        details.push({
-            code: k.klausul,
-            text: k.judul ? k.judul.toUpperCase() : '',
-            note: statusLabel,
-            result: '',
-            is_header: true,
-        });
-
+        // Collect decisions and failed items for this clause
         const subDecisions = [];
+        const failedItems = [];
+
         (k.sub_klausul || []).forEach(sub => {
-            // Sub-klausul header row — shows the sub code, title, and its own keputusan
-            details.push({
-                code: sub.kode,
-                text: sub.judul ? sub.judul.toUpperCase() : '',
-                note: sub.hasil_catatan || '-',
-                result: sub.keputusan || '-',
-                is_header: false,
-                is_sub_header: true,
-            });
             if (sub.keputusan) subDecisions.push(sub.keputusan);
 
-            sub.butir.forEach(b => {
-                const isCorrected = b.is_corrected && b.original_keputusan;
-
-                details.push({
-                    code: b.kode,
-                    text: b.teks,
-                    note: isCorrected
-                        ? `${b.hasil_catatan || ''} [Koreksi: ${b.original_keputusan} → ${b.keputusan}]`.trim()
-                        : b.hasil_catatan || '-',
-                    result: b.keputusan || '-',
-                    is_header: false,
-                    is_sub_header: false,
+            const failedButir = (sub.butir || []).filter(b => b.keputusan === 'G');
+            if (failedButir.length > 0) {
+                failedButir.forEach(b => {
+                    failedItems.push({
+                        code: sub.kode || b.kode,
+                        text: (b.teks || sub.judul || '').trim(),
+                        status: 'G',
+                    });
                 });
+            } else if (sub.keputusan === 'G') {
+                failedItems.push({
+                    code: sub.kode,
+                    text: (sub.judul || '').trim(),
+                    status: 'G',
+                });
+            }
 
-                subDecisions.push(b.keputusan);
+            (sub.butir || []).forEach(b => {
+                if (b.keputusan) subDecisions.push(b.keputusan);
             });
         });
+
+        // Check if any appendix table for this clause failed
+        const clauseTables = Object.entries(tablesForAppendix)
+            .filter(([subCode]) => subCode === k.klausul || subCode.startsWith(k.klausul + '.') || subCode.split('.')[0] === k.klausul)
+            .flatMap(([, tables]) => tables);
+
+        const failedTables = clauseTables.filter(tbl => computeTableStatus(tbl) === 'G');
+
+        if (failedTables.length > 0) {
+            subDecisions.push('G');
+            failedTables.forEach(ft => {
+                failedItems.push({
+                    code: ft.subClauseCode || k.klausul,
+                    text: `${ft.title || 'Tabel Lampiran Uji'} (Lampiran ${ft.subClauseCode || k.klausul})`,
+                    status: 'G',
+                });
+            });
+        }
 
         let clauseStatus = 'L';
         if (subDecisions.some(d => d === 'G')) clauseStatus = 'G';
         else if (subDecisions.length > 0 && subDecisions.every(d => d === 'TB')) clauseStatus = 'TB';
 
+        // Main clause header row for details: if any sub-clause/butir failed, main clause result must be 'G'
+        details.push({
+            code: (k.klausul || '').trim(),
+            text: k.judul ? k.judul.toUpperCase().trim() : '',
+            note: '',
+            result: clauseStatus === 'G' ? 'G' : '',
+            is_header: true,
+            is_fail: clauseStatus === 'G',
+        });
+
+        // Details sub rows
+        (k.sub_klausul || []).forEach(sub => {
+            const subResult = sub.keputusan || '-';
+            const subCode = hasLetter(sub.kode) ? '' : (sub.kode || '').trim();
+            details.push({
+                code: subCode,
+                text: (sub.judul || '').trim(),
+                note: (sub.hasil_catatan || '-').trim(),
+                result: subResult,
+                is_header: false,
+                is_sub_header: true,
+                is_fail: subResult === 'G',
+            });
+
+            (sub.butir || []).forEach(b => {
+                const bResult = b.keputusan || '-';
+                const bCode = hasLetter(b.kode) ? '' : (b.kode || '').trim();
+
+                details.push({
+                    code: bCode,
+                    text: (b.teks || '').trim(),
+                    note: (b.hasil_catatan || '-').trim(),
+                    result: bResult,
+                    is_header: false,
+                    is_sub_header: false,
+                    is_fail: bResult === 'G',
+                });
+            });
+        });
+
+        // Summary row for main clause
         summary.push({
-            clause: k.klausul,
-            title: k.judul ? k.judul.toUpperCase() : '',
+            clause: (k.klausul || '').trim(),
+            title: k.judul ? k.judul.toUpperCase().trim() : '',
             status: clauseStatus,
+            is_header: true,
+            is_fail: clauseStatus === 'G',
+        });
+
+        // Detailed rows in summary for failed items only
+        failedItems.forEach(item => {
+            const itemCode = (item.code || '').replace(/\.[a-zA-Z]+$/, '').trim();
+            summary.push({
+                clause: itemCode,
+                title: (item.text || '').trim(),
+                status: 'G',
+                is_header: false,
+                is_fail: true,
+            });
+            allFailedCodes.push(itemCode || item.code);
         });
     });
 
@@ -242,6 +636,7 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
     });
 
     const if_not_pass_text = 'tidak';
+    const uniqueFailedCodes = [...new Set(allFailedCodes)];
 
     // Use doc_* metadata if filled by drafter, fall back to order fields
     doc.render({
@@ -269,7 +664,8 @@ async function generateDraftDocx(report, klausulStatuses = {}) {
         image_product: productImgPath,
         image_component_product: productImgPath,
         marking_image: markingImgPath,
-        if_not_pass: details.some(d => d.result === 'G' || d.result?.includes('→')) ? if_not_pass_text : '',
+        if_not_pass: uniqueFailedCodes.length > 0 || details.some(d => d.result === 'G') ? if_not_pass_text : '',
+        failed_clauses_note: uniqueFailedCodes.length > 0 ? ` pada klausul ${uniqueFailedCodes.join(', ')}` : '',
     });
 
 
